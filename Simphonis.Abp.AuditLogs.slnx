@@ -1,0 +1,14 @@
+<Solution>
+    <Folder Name="/Solution Items/">
+        <File Path=".gitignore" />
+        <File Path="common.props" />
+        <File Path="README.md" />
+    </Folder>
+    <Folder Name="/src/">
+        <Project Path="src/Simphonis.Abp.AuditLogs/Simphonis.Abp.AuditLogs.csproj" Id="989b880e-eda9-41e8-8e89-23ae14f1b098" />
+    </Folder>
+    
+    <Folder Name="/test/">
+        <Project Path="test/Simphonis.Abp.AuditLogs.Tests/Simphonis.Abp.AuditLogs.Tests.csproj" />
+    </Folder>
+</Solution>

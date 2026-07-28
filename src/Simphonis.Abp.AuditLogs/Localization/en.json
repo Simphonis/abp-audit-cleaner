@@ -1,0 +1,11 @@
+{
+  "culture": "en",
+  "texts": {
+    "Setting": {
+      "AuditLogRetentionPeriod": {
+        "DisplayName": "Audit logs conservation period",
+        "Description": "Audit logs conservation period (in days)."
+      }
+    }
+  }
+}

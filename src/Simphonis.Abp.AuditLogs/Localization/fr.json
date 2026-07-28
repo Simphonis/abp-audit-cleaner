@@ -1,0 +1,11 @@
+{
+  "culture": "fr",
+  "texts": {
+    "Setting": {
+      "AuditLogRetentionPeriod": {
+        "DisplayName": "Durée de conservation des journaux d'audit",
+        "Description": "Durée de conservation des journaux d'audit (en jours)."
+      }
+    }
+  }
+}
