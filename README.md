@@ -35,6 +35,7 @@ Vous pouvez modifier la valeur par défaut de ces réglages dans la configuratio
   },
   // ...
 }
+```
 
 Si vous préférez influer sur la valeur coté C#, le nom des Setting sont dans des constantes de la classe `SimphonisAuditLogSettings`.
 
