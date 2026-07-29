@@ -9,8 +9,11 @@
         /// Supprime toutes les entrées du log d'audit dont l'âge est supérieur à la valeur spécifiée.
         /// </summary>
         /// <param name="maxAge">Age maximal au-delà duquel les entrées doivent être supprimées</param>
+        /// <param name="maxRowCount">
+        /// Nombre maximal de lignes à supprimer pendant cette opération. La valeur fournie ne peut pas dépasser celle de <see cref="SimphonisAuditLogConsts.MaximumPossibleRowCount"/>.
+        /// </param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        Task CleanAsync(TimeSpan maxAge, CancellationToken cancellationToken = default);
+        Task CleanAsync(TimeSpan maxAge, int maxRowCount = 10000, CancellationToken cancellationToken = default);
     }
 }

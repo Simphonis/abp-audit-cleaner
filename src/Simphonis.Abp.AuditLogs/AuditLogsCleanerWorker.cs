@@ -28,7 +28,9 @@ public class AuditLogsCleanerWorker : AsyncPeriodicBackgroundWorkerBase
         int retentionDays = await ReadRetentionPeriod(settingValueProvider, logger);
         TimeSpan maxAge = TimeSpan.FromDays(retentionDays);
 
-        await auditLogRepository.CleanAsync(maxAge, workerContext.CancellationToken);
+        int maxRowCount = await ReadMaxRowCount(settingValueProvider, logger);
+
+        await auditLogRepository.CleanAsync(maxAge, maxRowCount, workerContext.CancellationToken);
     }
 
     /// <summary>
@@ -57,6 +59,30 @@ public class AuditLogsCleanerWorker : AsyncPeriodicBackgroundWorkerBase
         {
             logger.LogWarning("The retention period cannot be negative (currently {RetentionPeriod})", result);
             return SimphonisAuditLogConsts.DefaultRetentionPeriod;
+        }
+
+        return result;
+    }
+
+    internal static async Task<int> ReadMaxRowCount(ISettingProvider settingValueProvider, ILogger logger)
+    {
+        string? strMaxRowCount = await settingValueProvider.GetOrNullAsync(SimphonisAuditLogSettings.MaxDeleteCount);
+        int result;
+        if (strMaxRowCount == null)
+        {
+            logger.LogWarning("Maximum delete count is not set. Using default value: {DefaultMaximumRowCount} days.", SimphonisAuditLogConsts.DefaultMaximumRowCount);
+            return SimphonisAuditLogConsts.DefaultMaximumRowCount;
+        }
+        else if (!int.TryParse(strMaxRowCount, NumberFormatInfo.InvariantInfo, out result))
+        {
+            logger.LogWarning("Maximum delete count setting is not a valid integer. Using default value: {DefaultMaximumRowCount} days.", SimphonisAuditLogConsts.DefaultRetentionPeriod);
+            return SimphonisAuditLogConsts.DefaultMaximumRowCount;
+        }
+
+        if (result <= 0)
+        {
+            logger.LogWarning("The maximum delete count cannot be negative (currently {MaximumDeleteCount})", result);
+            return SimphonisAuditLogConsts.DefaultMaximumRowCount;
         }
 
         return result;

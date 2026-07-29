@@ -1,4 +1,5 @@
-﻿using Simphonis.Abp.AuditLogs.Localization;
+﻿using System.Globalization;
+using Simphonis.Abp.AuditLogs.Localization;
 using Volo.Abp.Localization;
 using Volo.Abp.Settings;
 
@@ -10,9 +11,18 @@ public class SimphonisAuditLogSettingDefinitionProvider : SettingDefinitionProvi
     {
         context.Add(new SettingDefinition(
                 SimphonisAuditLogSettings.AuditLogRetentionPeriod,
-                "365",
+                SimphonisAuditLogConsts.DefaultRetentionPeriod.ToString(NumberFormatInfo.InvariantInfo),
                 new LocalizableString(typeof(SimphonisAuditLogsResource), "Setting:AuditLogRetentionPeriod:DisplayName"),
                 new LocalizableString(typeof(SimphonisAuditLogsResource), "Setting:AuditLogRetentionPeriod:Description"),
+                isVisibleToClients: true
+            )
+        );
+
+        context.Add(new SettingDefinition(
+                SimphonisAuditLogSettings.MaxDeleteCount,
+                SimphonisAuditLogConsts.DefaultMaximumRowCount.ToString(NumberFormatInfo.InvariantInfo),
+                new LocalizableString(typeof(SimphonisAuditLogsResource), "Setting:DefaultMaximumRowCount:DisplayName"),
+                new LocalizableString(typeof(SimphonisAuditLogsResource), "Setting:DefaultMaximumRowCount:Description"),
                 isVisibleToClients: true
             )
         );
