@@ -11,11 +11,11 @@ namespace Simphonis.Abp.AuditLogs;
 
 public class AuditLogCleanerTests : AuditLogsApplicationTestBase
 {
-    // Dans tous les tests c'est cette date qui sera utilisée comme "Now" par IClock
+    // In all tests, this is the date that will be used as "Now" by IClock
     private static readonly DateTime TestNow = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Local);
 
     /// <summary>
-    /// Données de test manipulées par le repository
+    /// Test data manipulated by the repository
     /// </summary>
     private AuditLog[] _database = [];
 
@@ -26,7 +26,7 @@ public class AuditLogCleanerTests : AuditLogsApplicationTestBase
         result.DeleteDirectAsync(default!, TestContext.Current.CancellationToken)
             .ReturnsForAnyArgs(callInfo =>
             {
-                // Suppression de toutes les entrées dans data qui correspondent à la lambda fournie
+                // Deletion of all entries in data that match the provided lambda
                 var lambda = callInfo.ArgAt<Expression<Func<AuditLog, bool>>>(0);
                 _database = _database.Except(_database.Where(lambda.Compile())).ToArray();
 
@@ -88,10 +88,10 @@ public class AuditLogCleanerTests : AuditLogsApplicationTestBase
         var asyncExecuter = CreateMockAsyncExecuter();
         var repository = CreateMockRepository();
 
-        DateTime dateRecente = TestNow.AddDays(-25);
+        DateTime recentDate = TestNow.AddDays(-25);
         _database = [
-            CreateTestEntry(dateRecente), // Entrée assez jeune qui sera conservée
-            CreateTestEntry(TestNow.AddDays(-35))           // Entrée plus ancienne qui sera supprimée
+            CreateTestEntry(recentDate), // Recent enough entry that will be kept
+            CreateTestEntry(TestNow.AddDays(-35))           // Older entry that will be deleted
         ];
 
         var cleaner = new AuditLogCleaner(repository, clock, asyncExecuter);
@@ -100,15 +100,15 @@ public class AuditLogCleanerTests : AuditLogsApplicationTestBase
         await cleaner.CleanAsync(TimeSpan.FromDays(30), 10000, TestContext.Current.CancellationToken);
 
         // Assert
-        // on ne doit plus avoir que l'entrée plus récente
-        _database.ShouldHaveSingleItem().ExecutionTime.ShouldBe(dateRecente);
+        // we should only have the more recent entry left
+        _database.ShouldHaveSingleItem().ExecutionTime.ShouldBe(recentDate);
     }
 
     [Fact]
     public async Task Applies_Security_Threshold()
     {
         // Arrange
-        // On prépare une suppression de 11 lignes, mais avec un nombre max de suppressions de 10 lignes
+        // We prepare a deletion of 11 rows, but with a max number of deletions of 10 rows
         var clock = CreateMockClock();
         var asyncExecuter = CreateMockAsyncExecuter();
         var repository = CreateMockRepository();
@@ -125,8 +125,8 @@ public class AuditLogCleanerTests : AuditLogsApplicationTestBase
             CreateTestEntry(TestNow.AddDays(-220)),
             CreateTestEntry(TestNow.AddDays(-210)),
             CreateTestEntry(TestNow.AddDays(-200)),
-            // 👆 Données trop vieilles qu'on veut supprimer (mais y en a trop donc on gardera la plus récente)
-            // 👇 Données à conserver
+            // 👆 Data too old that we want to delete (but there's too much of it so we'll keep the most recent)
+            // 👇 Data to keep
             CreateTestEntry(TestNow.AddDays(-30)),
         ];
 
@@ -136,8 +136,8 @@ public class AuditLogCleanerTests : AuditLogsApplicationTestBase
         await cleaner.CleanAsync(TimeSpan.FromDays(30), 10, TestContext.Current.CancellationToken);
 
         // Assert
-        // Il doit nous rester deux entrées : celle qui est assez récente, et celle qui date d'il y a 200 jours
-        // qui ne pouvait pas être inclue dans les 10 lignes
+        // We should have two entries left: the one that is recent enough, and the one from 200 days ago
+        // which could not be included in the 10 rows
         var remainingDates = _database.Select(al => al.ExecutionTime).ToArray();
         remainingDates.ShouldBe([TestNow.AddDays(-200), TestNow.AddDays(-30)]);
     }

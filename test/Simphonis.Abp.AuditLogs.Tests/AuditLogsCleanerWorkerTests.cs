@@ -15,7 +15,7 @@ public class AuditLogsCleanerWorkerTests : AuditLogsApplicationTestBase
     // Test case 2: Setting is set to a valid integer
     [InlineData("15", 15)]
     // Test case 3: Setting is set to an invalid integer
-    [InlineData("pouet", SimphonisAuditLogConsts.DefaultRetentionPeriod)]
+    [InlineData("nan", SimphonisAuditLogConsts.DefaultRetentionPeriod)]
     // Test case 4: Setting is set to a negative integer
     [InlineData("-15", SimphonisAuditLogConsts.DefaultRetentionPeriod)]
     // Test case 5 : Setting is zero
@@ -37,7 +37,7 @@ public class AuditLogsCleanerWorkerTests : AuditLogsApplicationTestBase
     // Test case 2: Setting is set to a valid integer
     [InlineData("15", 15)]
     // Test case 3: Setting is set to an invalid integer
-    [InlineData("pouet", SimphonisAuditLogConsts.DefaultMaximumRowCount)]
+    [InlineData("nan", SimphonisAuditLogConsts.DefaultMaximumRowCount)]
     // Test case 4: Setting is set to a negative integer
     [InlineData("-15", SimphonisAuditLogConsts.DefaultMaximumRowCount)]
     // Test case 5 : Setting is zero

@@ -8,13 +8,13 @@ using Volo.Abp.Uow;
 
 namespace Simphonis.Abp.AuditLogs;
 /// <summary>
-/// Worker qui exécute un nettoyage du log d'audit toutes les 10 minutes, en conservant la durée de rétention définie dans le setting <see cref="SimphonisAuditLogSettings.AuditLogRetentionPeriod"/>
+/// Worker that runs a cleanup of the audit log every 10 minutes, keeping the retention period defined in the setting <see cref="SimphonisAuditLogSettings.AuditLogRetentionPeriod"/>
 /// </summary>
 public class AuditLogsCleanerWorker : AsyncPeriodicBackgroundWorkerBase
 {
     public AuditLogsCleanerWorker(AbpAsyncTimer timer, IServiceScopeFactory serviceScopeFactory) : base(timer, serviceScopeFactory)
     {
-        int periodInMinutes = 10;
+        const int periodInMinutes = 10;
         Timer.Period = periodInMinutes * 60 * 1000;
     }
 
@@ -34,7 +34,7 @@ public class AuditLogsCleanerWorker : AsyncPeriodicBackgroundWorkerBase
     }
 
     /// <summary>
-    /// Lecture sécurisée du setting contenant la durée de rétention à appliquer
+    /// Safely reads and returns the setting containing the retention period to apply
     /// </summary>
     /// <param name="settingValueProvider"></param>
     /// <param name="logger"></param>

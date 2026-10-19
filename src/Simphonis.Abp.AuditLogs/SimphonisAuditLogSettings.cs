@@ -5,12 +5,12 @@ public static class SimphonisAuditLogSettings
     private const string Prefix = "Simphonis.AuditLogs";
 
     /// <summary>
-    /// Age maximal des lignes du log d'audit, en jours.
+    /// Maximum age of the audit log rows, in days.
     /// </summary>
     public const string AuditLogRetentionPeriod = Prefix + ".AuditLogRetentionPeriod";
 
     /// <summary>
-    /// Nombre maximal de lignes supprimables à chaque passage du batch de suppression
+    /// Maximum number of rows that can be deleted on each run of the deletion batch
     /// </summary>
     public const string MaxDeleteCount = Prefix + ".MaxDeleteCount";
 }

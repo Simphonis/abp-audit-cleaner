@@ -5,7 +5,7 @@ This library contains tools whose purpose is to facilitate or automate the clean
 # Usage
 
 The library contains an ABP module, which can be added to any solution.
-By adding it, a new worker will be registered, to run every hour (not configurable for now). When this worker runs, it deletes all audit log entries whose age exceeds a configured value, which is one year by default.
+By adding it, a new worker will be registered, to run every 10 minutes (not configurable for now). When this worker runs, it deletes all audit log entries whose age exceeds a configured value, which is one year by default.
 It will also make a new service available, `IAuditLogCleaner`, which provides a utility method to manually clean up the audit logs.
 
 ## Installing the module

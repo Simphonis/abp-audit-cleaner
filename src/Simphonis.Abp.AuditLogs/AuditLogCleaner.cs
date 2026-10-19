@@ -5,7 +5,7 @@ using Volo.Abp.Timing;
 
 namespace Simphonis.Abp.AuditLogs;
 /// <summary>
-/// Implémentation par défaut de <see cref="IAuditLogCleaner"/>, qui utilise <see cref="IAuditLogRepository"/> pour faire son nettoyage
+/// Default implementation of <see cref="IAuditLogCleaner"/>, which uses <see cref="IAuditLogRepository"/> to do its cleanup
 /// </summary>
 public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
 {
@@ -41,8 +41,8 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
         DateTime minimumCreationTime = _clock.Now - maxAge;
         DateTime? securityCreationTime = await GetSecurityThreshold(maxRowCount);
 
-        // Si la date de sécurité est moins restrictive que la date configurée, on va utiliser celle de sécurité
-        // Ca permet d'éviter de supprimer des millions de lignes, ce qui risque de verrouiller la BDD pendant trop longtemps.
+        // If the security date is less restrictive than the configured date, we will use the security one
+        // This avoids deleting millions of rows, which risks locking the DB for too long.
         if (securityCreationTime.HasValue && minimumCreationTime > securityCreationTime)
         {
             minimumCreationTime = securityCreationTime.Value;
@@ -52,10 +52,10 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
     }
 
     /// <summary>
-    /// Renvoie la date de création du Nième élément dans la table des logs d'audit
+    /// Returns the creation date of the Nth element in the audit logs table
     /// </summary>
-    /// <param name="rowCount">Position dont on veut récupérer la date de création (après un tri par date de création)</param>
-    /// <returns>La date de création trouvée, ou <see langword="null"/> si la table ne contient pas assez de lignes.</returns>
+    /// <param name="rowCount">Position for which we want to retrieve the creation date (after sorting by creation date)</param>
+    /// <returns>The creation date found, or <see langword="null"/> if the table does not contain enough rows.</returns>
     protected virtual async Task<DateTime?> GetSecurityThreshold(int rowCount)
     {
         IQueryable<AuditLog> query = await _auditLogRepository.GetQueryableAsync();
@@ -69,7 +69,7 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
 
         if (result == default)
         {
-            // Si on obtient la valeur par défaut, c'est qu'on n'a pas trouvé de ligne
+            // If we get the default value, it means we did not find a row
             return null;
         }
         return result;

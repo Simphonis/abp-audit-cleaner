@@ -1,19 +1,18 @@
-﻿namespace Simphonis.Abp.AuditLogs
+﻿namespace Simphonis.Abp.AuditLogs;
+
+/// <summary>
+/// Utility service responsible for implementing the audit log cleanup logic.
+/// </summary>
+public interface IAuditLogCleaner
 {
     /// <summary>
-    /// Service utilitaire chargé d'implémenter la logique de nettoyage des logs d'audit.
+    /// Deletes all audit log entries whose age is greater than the specified value.
     /// </summary>
-    public interface IAuditLogCleaner
-    {
-        /// <summary>
-        /// Supprime toutes les entrées du log d'audit dont l'âge est supérieur à la valeur spécifiée.
-        /// </summary>
-        /// <param name="maxAge">Age maximal au-delà duquel les entrées doivent être supprimées</param>
-        /// <param name="maxRowCount">
-        /// Nombre maximal de lignes à supprimer pendant cette opération. La valeur fournie ne peut pas dépasser celle de <see cref="SimphonisAuditLogConsts.MaximumPossibleRowCount"/>.
-        /// </param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        Task CleanAsync(TimeSpan maxAge, int maxRowCount = 10000, CancellationToken cancellationToken = default);
-    }
+    /// <param name="maxAge">Maximum age beyond which entries must be deleted</param>
+    /// <param name="maxRowCount">
+    /// Maximum number of rows to delete during this operation. The provided value cannot exceed the one in <see cref="SimphonisAuditLogConsts.MaximumPossibleRowCount"/>.
+    /// </param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    Task CleanAsync(TimeSpan maxAge, int maxRowCount = 10000, CancellationToken cancellationToken = default);
 }
