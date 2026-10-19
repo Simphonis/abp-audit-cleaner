@@ -1,32 +1,31 @@
 # Simphonis.Abp.AuditLogs
 
-Cette bibliothèque contient des outils dont l'objectif est de faciliter ou automatiser le nettoyage du log d'audit ABP.
+This library contains tools whose purpose is to facilitate or automate the cleanup of the ABP audit log.
 
-# Utilisation
+# Usage
 
-La bibliothèque contient module ABP, qui peut être ajouté dans n'importe quelle solution.
-En l'ajoutant, un nouveau worker va être enregistré, pour une exécution toutes les heures (non configurable pour le moment). Lorsque ce worker s'exécute, il supprime toutes les entrées du log d'audit dont l'âge dépasse une valeur configurée, qui est d'un an par défaut.
-Il va également rendre disponible un nouveau service, `IAuditLogCleaner`, qui fournit une méthode utilitaire pour nettoyer manuellement les logs d'audit.
+The library contains an ABP module, which can be added to any solution.
+By adding it, a new worker will be registered, to run every hour (not configurable for now). When this worker runs, it deletes all audit log entries whose age exceeds a configured value, which is one year by default.
+It will also make a new service available, `IAuditLogCleaner`, which provides a utility method to manually clean up the audit logs.
 
-## Installation du module
+## Installing the module
 
-1. Si ce n'est pas déjà fait, [suivez le wiki de ce projet DevOps](https://dev.azure.com/orkeis-proj1/Simphonis.Libs/_wiki/wikis/Simphonis.Libs.wiki/206/Configurer-une-application-.NET-pour-utiliser-le-serveur-Nuget) pour ajouter sa source de packages NuGet à votre projet.
-1. Ajoutez le package NuGet `Simphonis.Abp.AuditLogs` à votre solution. On recommande de l'ajouter dans la couche Application. Et si vous en avez plusieurs, utilisez-en une seule pour que le worker ne s'exécute pas en double !
-1. Dans le module du projet où vous avez ajouté la bibliothèque, n'oubliez pas d'ajouter une référence au module :
+1. Add the `Simphonis.Abp.AuditLogs` NuGet package to your solution. We recommend adding it to the Application layer. And if you have several of them, use only one so that the worker does not run twice!
+1. In the module of the project where you added the library, don't forget to add a reference to the module:
 
 ```cs
 [DependsOn(typeof(SimphoAuditLogsModule))]
-public class MonModule
+public class MyModule
 {
   // ...
-  // Pas de modification nécessaire ici !
+  // No changes needed here!
 }
 ```
 
 ## Configuration
-Un certain nombre de réglages sont disponibles sous la forme de Settings ABP. Ils influencent le comportement de la tâche planifiée et n'ont pas d'impact sur l'utilisation directe de `IAuditLogCleaner`.
+A number of settings are available in the form of ABP Settings. They influence the behavior of the scheduled task and have no impact on the direct use of `IAuditLogCleaner`.
 
-Vous pouvez modifier la valeur par défaut de ces réglages dans la configuration de l'application. Par exemple :
+You can change the default value of these settings in the application configuration. For example:
 ```js
 {
   // ...
@@ -37,14 +36,14 @@ Vous pouvez modifier la valeur par défaut de ces réglages dans la configuratio
 }
 ```
 
-Si vous préférez influer sur la valeur coté C#, le nom des Setting sont dans des constantes de la classe `SimphonisAuditLogSettings`.
+If you prefer to change the value on the C# side, the Setting names are in constants of the `SimphonisAuditLogSettings` class.
 
-**Age maximal des entrées**
-Cette valeur est stockée dans le Setting ABP `Simphonis.AuditLogs.AuditLogRetentionPeriod`, et contient l'âge maximal du log d'audit, en jours. La valeur par défaut est de 365 jours.
-La tâche planifiée va tenter de supprimer toutes les entrées du log d'audit plus vieux que cette durée configurée.
+**Maximum age of entries**
+This value is stored in the ABP Setting `Simphonis.AuditLogs.AuditLogRetentionPeriod`, and contains the maximum age of the audit log, in days. The default value is 365 days.
+The scheduled task will attempt to delete all audit log entries older than this configured duration.
 
-**Quantité maximale de lignes supprimables**
-Cette valeur est stockée dans le Setting ABP `Simphonis.AuditLogs.MaxDeleteCount`, et contient la quantité maximale de lignes à supprimer à chaque passage de la tâche planifiée. Par défaut, cette limite est de 10000 lignes. Sa valeur ne peut pas être supérieure à 1000000.
-Ce réglage est présent (et obligatoire !) pour éviter de supprimer trop de données d'un coup, ce qui poserait des problèmes à l'application :
-- Blocage de l'application tant que la suppression n'est pas terminée
-- En fonction de la configuration du serveur de base de données, la suppression pourrait faire grossir les fichiers de données de manière incontrôlée et saturer l'espace disque.
+**Maximum number of deletable rows**
+This value is stored in the ABP Setting `Simphonis.AuditLogs.MaxDeleteCount`, and contains the maximum number of rows to delete on each run of the scheduled task. By default, this limit is 10000 rows. Its value cannot be greater than 1000000.
+This setting exists (and is mandatory!) to avoid deleting too much data at once, which would cause problems for the application:
+- Blocking of the application until the deletion is complete
+- Depending on the database server configuration, the deletion could make the data files grow in an uncontrolled way and fill up the disk space.
