@@ -1,0 +1,20 @@
+version: 2
+
+updates:
+  # GitHub Actions used by the workflows in .github/workflows.
+  # Actions are pinned by commit SHA; Dependabot updates both the SHA and the version comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Let new releases settle before proposing them (supply-chain hardening).
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci
+
+  # NuGet packages are deliberately not listed: they are monitored through Dependabot
+  # security alerts only (repository settings), without automatic pull requests.
