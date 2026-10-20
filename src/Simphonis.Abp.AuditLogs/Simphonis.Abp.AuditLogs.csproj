@@ -4,19 +4,38 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+		<IncludeSymbols>true</IncludeSymbols>
+		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Volo.Abp.AuditLogging.Domain" Version="10.7.0" />
-    <PackageReference Include="Volo.Abp.BackgroundWorkers" Version="10.7.0" />
-    <PackageReference Include="Volo.Abp.Core" Version="10.7.0" />
-  </ItemGroup>
+	<PropertyGroup>
+		<PackageId>Simphonis.Abp.AuditLogs</PackageId>
+		<PackageVersion>$(AbpVersion)-pre01</PackageVersion>
+		<Authors>Simphonis</Authors>
+		<Description>
+			A small ABP module that implements a tool to clean up the audit logs, and provides a worker to invoke the cleanup tool regularily.
+		</Description>
+		<PackageProjectUrl>https://github.com/Simphonis/abp-audit-cleaner</PackageProjectUrl>
+		<PackageTags>aspnetcore, web, framework, csharp, abp, audit</PackageTags>
+		<PackageLicenseExpression>LGPL-3.0-only</PackageLicenseExpression>
+		<RepositoryType>git</RepositoryType>
+		<RepositoryUrl>https://github.com/Simphonis/abp-audit-cleaner</RepositoryUrl>
+	</PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Update="ConfigureAwait.Fody" Version="3.4.1" />
-    <PackageReference Update="Fody" Version="6.9.3">
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
+    <PackageReference Include="Volo.Abp.AuditLogging.Domain" Version="$(AbpVersion)" />
+    <PackageReference Include="Volo.Abp.BackgroundWorkers" Version="$(AbpVersion)" />
+    <PackageReference Include="Volo.Abp.Core" Version="$(AbpVersion)" />
   </ItemGroup>
 
+	<ItemGroup>
+		<PackageReference Include="ConfigureAwait.Fody" Version="3.4.1" PrivateAssets="All" />
+		<PackageReference Include="Fody" Version="6.9.3">
+			<PrivateAssets>All</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
 </Project>
