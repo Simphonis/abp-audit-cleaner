@@ -13,7 +13,11 @@
 
 	<PropertyGroup>
 		<PackageId>Simphonis.Abp.AuditLogs</PackageId>
-		<PackageVersion>$(AbpVersion)-pre01</PackageVersion>
+		<!--
+			This package version is used for dev environments.
+			Otherwise the pipeline will override it to use the publishing version.
+		-->
+		<PackageVersion>$(AbpVersion)-dev</PackageVersion>
 		<Authors>Simphonis</Authors>
 		<Description>
 			A small ABP module that implements a tool to clean up the audit logs, and provides a worker to invoke the cleanup tool regularily.

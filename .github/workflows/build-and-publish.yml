@@ -1,0 +1,168 @@
+# Builds, tests and packs the library on every push / pull request to main.
+# Pushing a tag vX.Y.Z[-suffix] additionally publishes the package to nuget.org
+# (Trusted Publishing, environment "nuget") and creates the matching GitHub Release.
+#
+# NOTE: the nuget.org Trusted Publishing policy references this file name.
+# Renaming the file requires updating the policy.
+
+name: Build and publish
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  SOLUTION: Simphonis.Abp.AuditLogs.slnx
+  PACKAGE_PROJECT: src/Simphonis.Abp.AuditLogs/Simphonis.Abp.AuditLogs.csproj
+  PACKAGES_DIR: ${{ github.workspace }}/artifacts/packages
+
+jobs:
+  build:
+    name: Build, test and pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Compute package version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
+            echo "Not a tag build: using the version defined in the project file."
+            exit 0
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' is not a valid version tag (expected vX.Y.Z or vX.Y.Z-suffix)."
+            exit 1
+          fi
+          echo "Package version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore "$SOLUTION"
+
+      - name: Build
+        run: dotnet build "$SOLUTION" --configuration Release --no-restore -p:ContinuousIntegrationBuild=true
+
+      - name: Test
+        run: dotnet test --solution "$SOLUTION" --configuration Release --no-build
+
+      - name: Pack
+        shell: bash
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          args=()
+          if [[ -n "$PACKAGE_VERSION" ]]; then
+            args+=("-p:PackageVersion=$PACKAGE_VERSION")
+          fi
+          dotnet pack "$PACKAGE_PROJECT" --configuration Release --no-build --output "$PACKAGES_DIR" "${args[@]}"
+
+      - name: Upload packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages
+          path: |
+            ${{ env.PACKAGES_DIR }}/*.nupkg
+            ${{ env.PACKAGES_DIR }}/*.snupkg
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish to nuget.org
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: nuget
+      url: https://www.nuget.org/packages/Simphonis.Abp.AuditLogs/${{ needs.build.outputs.version }}
+    permissions:
+      id-token: write          # OIDC token for NuGet Trusted Publishing and Sigstore signing
+      attestations: write      # Persist the build provenance attestation
+      artifact-metadata: write # Attestation storage record
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: packages
+          path: ${{ env.PACKAGES_DIR }}
+
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ env.PACKAGES_DIR }}/*.nupkg
+            ${{ env.PACKAGES_DIR }}/*.snupkg
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: NuGet login (Trusted Publishing)
+        id: nuget-login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      # The .snupkg symbol package is pushed automatically alongside its .nupkg.
+      - name: Push to nuget.org
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: >-
+          dotnet nuget push "$PACKAGES_DIR/*.nupkg"
+          --api-key "$NUGET_API_KEY"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+  github-release:
+    name: Create GitHub Release
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # Create the release and upload its assets
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: packages
+          path: ${{ env.PACKAGES_DIR }}
+
+      - name: Create release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          args=(--repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$GITHUB_REF_NAME")
+          if [[ "$PACKAGE_VERSION" == *-* ]]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" "${args[@]}" "$PACKAGES_DIR"/*.nupkg "$PACKAGES_DIR"/*.snupkg
