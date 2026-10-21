@@ -5,45 +5,44 @@ This library contains tools whose purpose is to facilitate or automate the clean
 # Usage
 
 The library contains an ABP module, which can be added to any solution.
-By adding it, a new worker will be registered, to run every 10 minutes (not configurable for now). When this worker runs, it deletes all audit log entries whose age exceeds a configured value, which is one year by default.
-It will also make a new service available, `IAuditLogCleaner`, which provides a utility method to manually clean up the audit logs.
+By adding it, you may choose to register a worker to run regularly. When this worker runs, it deletes all audit log entries whose age exceeds a configured value, which is one year by default.
+It will also make a new service available, `IAuditLogCleaner`, which provides a utility method to manually clean up the audit logs, if the worker option does not work for you.
 
 ## Installing the module
 
-1. Add the `Simphonis.Abp.AuditLogs` NuGet package to your solution. We recommend adding it to the Application layer. And if you have several of them, use only one so that the worker does not run twice!
-1. In the module of the project where you added the library, don't forget to add a reference to the module:
+Use the ABP `add-package` command to add the .NET reference in your project and register its module.
 
+```bash
+abp add-package Simphonis.Abp.AuditLogs
+```
+
+## Register the worker
+If you just want to regularly clean the logs, the easiest option is to register the `AuditLogsCleanerWorker` class as a background worker:
 ```cs
-[DependsOn(typeof(SimphoAuditLogsModule))]
-public class MyModule
+public override async Task OnApplicationInitializationAsync(ApplicationInitializationContext context)
 {
-  // ...
-  // No changes needed here!
+    await context.AddBackgroundWorkerAsync<AuditLogsCleanerWorker>();
 }
 ```
 
-## Configuration
-A number of settings are available in the form of ABP Settings. They influence the behavior of the scheduled task and have no impact on the direct use of `IAuditLogCleaner`.
-
-You can change the default value of these settings in the application configuration. For example:
-```js
+### Configuration
+By default, this worker will run every 10 minutes to clean up the old audit log entries. If you wish to change the interval at which it runs, change
+the value in `AuditLogsCleanerWorkerOptions`. For example:
+```cs
+public override void ConfigureServices(ServiceConfigurationContext context)
 {
-  // ...
-  "Settings" : {
-    "Simphonis.AuditLogs.AuditLogRetentionPeriod": "100"
-  },
-  // ...
+    Configure<AuditLogsCleanerWorkerOptions>(opts =>
+    {
+        opts.Period = TimeSpan.FromMinutes(30);
+    });
 }
 ```
 
-If you prefer to change the value on the C# side, the Setting names are in constants of the `SimphonisAuditLogSettings` class.
+If for some reason you cannot use this basic worker, then you may use your own tools to call `IAuditLogCleaner` manually.
 
-**Maximum age of entries**
-This value is stored in the ABP Setting `Simphonis.AuditLogs.AuditLogRetentionPeriod`, and contains the maximum age of the audit log, in days. The default value is 365 days.
-The scheduled task will attempt to delete all audit log entries older than this configured duration.
+Additionnaly, the worker uses some configuration values stored in the ABP Settings. They influence the behavior of the scheduled task and have no impact on the direct use of `IAuditLogCleaner`.
 
-**Maximum number of deletable rows**
-This value is stored in the ABP Setting `Simphonis.AuditLogs.MaxDeleteCount`, and contains the maximum number of rows to delete on each run of the scheduled task. By default, this limit is 10000 rows. Its value cannot be greater than 1000000.
-This setting exists (and is mandatory!) to avoid deleting too much data at once, which would cause problems for the application:
-- Blocking of the application until the deletion is complete
-- Depending on the database server configuration, the deletion could make the data files grow in an uncontrolled way and fill up the disk space.
+| Name | Default | Description |
+| --- | --- | --- |
+| Simphonis.AuditLogs.AuditLogRetentionPeriod | 365 | Maximum age of an audit log row, in days, after which the worker will try to remove it. |
+| Simphonis.AuditLogs.MaxDeleteCount | 10000 | Maximum number of audit log rows that can be removed in a single worker run. This setting exists to avoid overloading the database if there are a very large number of old rows to delete. Note that this value cannot be set above 1000000. |

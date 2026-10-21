@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Volo.Abp.BackgroundWorkers;
 using Volo.Abp.Settings;
 using Volo.Abp.Threading;
@@ -8,14 +9,19 @@ using Volo.Abp.Uow;
 
 namespace Simphonis.Abp.AuditLogs;
 /// <summary>
-/// Worker that runs a cleanup of the audit log every 10 minutes, keeping the retention period defined in the setting <see cref="SimphonisAuditLogSettings.AuditLogRetentionPeriod"/>
+/// Worker that runs a cleanup of the audit log at the interval defined in <see cref="AuditLogsCleanerWorkerOptions.Period"/>, keeping the retention period defined in the setting <see cref="SimphonisAuditLogSettings.AuditLogRetentionPeriod"/>
 /// </summary>
 public class AuditLogsCleanerWorker : AsyncPeriodicBackgroundWorkerBase
 {
-    public AuditLogsCleanerWorker(AbpAsyncTimer timer, IServiceScopeFactory serviceScopeFactory) : base(timer, serviceScopeFactory)
+    public AuditLogsCleanerWorker(AbpAsyncTimer timer, IServiceScopeFactory serviceScopeFactory, IOptions<AuditLogsCleanerWorkerOptions> options) : base(timer, serviceScopeFactory)
     {
-        const int periodInMinutes = 10;
-        Timer.Period = periodInMinutes * 60 * 1000;
+        TimeSpan period = options.Value.Period;
+        if (period.TotalMilliseconds < 1 || period.TotalMilliseconds > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options), period, $"{nameof(AuditLogsCleanerWorkerOptions)}.{nameof(AuditLogsCleanerWorkerOptions.Period)} must be strictly positive and lower than {int.MaxValue} milliseconds.");
+        }
+
+        Timer.Period = (int)period.TotalMilliseconds;
     }
 
     [UnitOfWork]

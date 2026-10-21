@@ -13,8 +13,7 @@ public class SimphonisAuditLogSettingDefinitionProvider : SettingDefinitionProvi
                 SimphonisAuditLogSettings.AuditLogRetentionPeriod,
                 SimphonisAuditLogConsts.DefaultRetentionPeriod.ToString(NumberFormatInfo.InvariantInfo),
                 new LocalizableString(typeof(SimphonisAuditLogsResource), "Setting:AuditLogRetentionPeriod:DisplayName"),
-                new LocalizableString(typeof(SimphonisAuditLogsResource), "Setting:AuditLogRetentionPeriod:Description"),
-                isVisibleToClients: true
+                new LocalizableString(typeof(SimphonisAuditLogsResource), "Setting:AuditLogRetentionPeriod:Description")
             )
         );
 
@@ -22,8 +21,7 @@ public class SimphonisAuditLogSettingDefinitionProvider : SettingDefinitionProvi
                 SimphonisAuditLogSettings.MaxDeleteCount,
                 SimphonisAuditLogConsts.DefaultMaximumRowCount.ToString(NumberFormatInfo.InvariantInfo),
                 new LocalizableString(typeof(SimphonisAuditLogsResource), "Setting:DefaultMaximumRowCount:DisplayName"),
-                new LocalizableString(typeof(SimphonisAuditLogsResource), "Setting:DefaultMaximumRowCount:Description"),
-                isVisibleToClients: true
+                new LocalizableString(typeof(SimphonisAuditLogsResource), "Setting:DefaultMaximumRowCount:Description")
             )
         );
     }

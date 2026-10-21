@@ -21,9 +21,4 @@ public class SimphoAuditLogsModule : AbpModule
             opts.DefaultResourceType = typeof(SimphonisAuditLogsResource);
         });
     }
-
-    public override async Task OnApplicationInitializationAsync(ApplicationInitializationContext context)
-    {
-        await context.AddBackgroundWorkerAsync<AuditLogsCleanerWorker>();
-    }
 }
