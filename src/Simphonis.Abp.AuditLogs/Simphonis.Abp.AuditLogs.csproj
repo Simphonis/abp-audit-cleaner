@@ -44,4 +44,8 @@
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
 		</PackageReference>
 	</ItemGroup>
+
+	<ItemGroup>
+		<None Include="NuGet.md" Pack="true" PackagePath="\" Visible="false" />
+	</ItemGroup>
 </Project>
