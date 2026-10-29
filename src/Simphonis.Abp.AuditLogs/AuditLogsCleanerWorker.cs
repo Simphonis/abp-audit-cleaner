@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+using System.Diagnostics;
+using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -31,12 +32,18 @@ public class AuditLogsCleanerWorker : AsyncPeriodicBackgroundWorkerBase
         ISettingProvider settingValueProvider = workerContext.ServiceProvider.GetRequiredService<ISettingProvider>();
         ILogger logger = workerContext.ServiceProvider.GetRequiredService<ILogger<AuditLogsCleanerWorker>>();
 
+        using IDisposable? _ = logger.BeginScope(nameof(AuditLogsCleanerWorker));
+        Stopwatch watch = Stopwatch.StartNew();
+
         int retentionDays = await ReadRetentionPeriod(settingValueProvider, logger);
         TimeSpan maxAge = TimeSpan.FromDays(retentionDays);
 
         int maxRowCount = await ReadMaxRowCount(settingValueProvider, logger);
 
         await auditLogRepository.CleanAsync(maxAge, maxRowCount, workerContext.CancellationToken);
+
+        watch.Stop();
+        logger.LogInformation("Audit log cleaner ran in {Elapsed}ms", watch.ElapsedMilliseconds);
     }
 
     /// <summary>
