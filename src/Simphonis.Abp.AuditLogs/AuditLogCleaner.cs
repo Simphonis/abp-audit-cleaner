@@ -1,6 +1,8 @@
-﻿using Volo.Abp.AuditLogging;
+using Volo.Abp.AuditLogging;
+using Volo.Abp.Data;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Linq;
+using Volo.Abp.MultiTenancy;
 using Volo.Abp.Timing;
 
 namespace Simphonis.Abp.AuditLogs;
@@ -12,12 +14,14 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
     private readonly IAuditLogRepository _auditLogRepository;
     private readonly IClock _clock;
     private readonly IAsyncQueryableExecuter _asyncExecuter;
+    private readonly IDataFilter _dataFilter;
 
-    public AuditLogCleaner(IAuditLogRepository auditLogRepository, IClock clock, IAsyncQueryableExecuter asyncExecuter)
+    public AuditLogCleaner(IAuditLogRepository auditLogRepository, IClock clock, IAsyncQueryableExecuter asyncExecuter, IDataFilter dataFilter)
     {
         _auditLogRepository = auditLogRepository;
         _clock = clock;
         _asyncExecuter = asyncExecuter;
+        _dataFilter = dataFilter;
     }
 
     /// <inheritdoc />
@@ -37,6 +41,9 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
         {
             throw new ArgumentException($"The maximum row count cannot exceed {SimphonisAuditLogConsts.MaximumPossibleRowCount} rows", nameof(maxRowCount));
         }
+
+        // Clean the audit logs for all tenants (in the current database)
+        using IDisposable _ = _dataFilter.Disable<IMultiTenant>();
 
         DateTime minimumCreationTime = _clock.Now - maxAge;
         DateTime? securityCreationTime = await GetSecurityThreshold(maxRowCount);

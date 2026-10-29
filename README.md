@@ -46,3 +46,7 @@ Additionnaly, the worker uses some configuration values stored in the ABP Settin
 | --- | --- | --- |
 | Simphonis.AuditLogs.AuditLogRetentionPeriod | 365 | Maximum age of an audit log row, in days, after which the worker will try to remove it. |
 | Simphonis.AuditLogs.MaxDeleteCount | 10000 | Maximum number of audit log rows that can be removed in a single worker run. This setting exists to avoid overloading the database if there are a very large number of old rows to delete. Note that this value cannot be set above 1000000. |
+
+# Known issues
+
+This library was designed to work on single-database applications. If your application uses one separate database per tenant, it will currently only clean the host tenant's database.

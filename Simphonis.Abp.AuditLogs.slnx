@@ -10,6 +10,7 @@
     </Folder>
     
     <Folder Name="/test/">
+        <Project Path="test/Simphonis.Abp.AuditLogs.EntityFrameworkCore.Tests/Simphonis.Abp.AuditLogs.EntityFrameworkCore.Tests.csproj" />
         <Project Path="test/Simphonis.Abp.AuditLogs.Tests/Simphonis.Abp.AuditLogs.Tests.csproj" />
     </Folder>
 </Solution>

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Single-purpose ABP module library (NuGet package `Simphonis.Abp.AuditLogs`) that deletes old audit log entries: a background worker (`AuditLogsCleanerWorker`) runs a periodic cleanup, and `IAuditLogCleaner` is exposed for manual cleanup. The module deliberately does not register the worker: consuming applications opt in with `AddBackgroundWorkerAsync<AuditLogsCleanerWorker>()`. The worker's period comes from `AuditLogsCleanerWorkerOptions.Period` (standard .NET options, default `SimphonisAuditLogConsts.DefaultWorkerPeriodInMinutes`), while the retention period and max delete count are ABP settings. Two projects: `src/Simphonis.Abp.AuditLogs` (the shipped library) and `test/Simphonis.Abp.AuditLogs.Tests`. Requires the .NET 10 SDK.
+Single-purpose ABP module library (NuGet package `Simphonis.Abp.AuditLogs`) that deletes old audit log entries: a background worker (`AuditLogsCleanerWorker`) runs a periodic cleanup, and `IAuditLogCleaner` is exposed for manual cleanup. The module deliberately does not register the worker: consuming applications opt in with `AddBackgroundWorkerAsync<AuditLogsCleanerWorker>()`. The worker's period comes from `AuditLogsCleanerWorkerOptions.Period` (standard .NET options, default `SimphonisAuditLogConsts.DefaultWorkerPeriodInMinutes`), while the retention period and max delete count are ABP settings. Three projects: `src/Simphonis.Abp.AuditLogs` (the shipped library), `test/Simphonis.Abp.AuditLogs.Tests` (unit tests) and `test/Simphonis.Abp.AuditLogs.EntityFrameworkCore.Tests` (integration tests against the real EF Core repository). Requires the .NET 10 SDK.
 
 The solution file is the XML format `Simphonis.Abp.AuditLogs.slnx` — there is no `.sln`.
 
@@ -38,7 +38,10 @@ There is no separate lint/format/typecheck tooling. Style rules (naming, file-sc
 
 ## Code conventions
 
-- Both projects are woven by ConfigureAwait.Fody (`FodyWeavers.xml`): never add manual `ConfigureAwait(false)` calls; CA2007 is disabled.
-- Tests are pure unit tests using NSubstitute + Shouldly + xunit.v3: no database, no ABP IoC bootstrapping — construct the class under test directly with mocks. Pass `TestContext.Current.CancellationToken` instead of `CancellationToken.None` (xunit.v3 idiom used throughout).
-- The test project reuses the library's root namespace `Simphonis.Abp.AuditLogs`; `InternalsVisibleTo` for the test assembly is already declared in `src/Simphonis.Abp.AuditLogs/Properties/AssemblyInfo.cs`.
+- All tests use Shouldly + xunit.v3. Pass `TestContext.Current.CancellationToken` instead of `CancellationToken.None` (xunit.v3 idiom used throughout).
+- `Simphonis.Abp.AuditLogs.Tests` holds pure unit tests using NSubstitute: no database, no ABP IoC bootstrapping — construct the class under test directly with mocks.
+- `Simphonis.Abp.AuditLogs.EntityFrameworkCore.Tests` holds integration tests, for behavior that mocks cannot reproduce, such as ABP data filters (multi-tenancy) applied by EF Core:
+  - `AuditLogsEntityFrameworkCoreTestModule` starts a real ABP application on an in-memory SQLite database (one connection kept open for the application's lifetime, tables created at startup). Each test creates and shuts down its own application.
+  - The application must use Autofac (`options.UseAutofac()`): `AbpDbContext` relies on property injection.
+  - Repositories only work inside a unit of work: wrap every repository call in `IUnitOfWorkManager.Begin()`.
 - New ABP settings need: a constant in `SimphonisAuditLogSettings`, a default in `SimphonisAuditLogConsts`, a `SettingDefinition` in `SimphonisAuditLogSettingDefinitionProvider`, and localized strings in both `Localization/fr.json` and `Localization/en.json` (default culture is fr-FR).
