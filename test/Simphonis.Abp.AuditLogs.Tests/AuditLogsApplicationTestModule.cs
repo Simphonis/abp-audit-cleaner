@@ -1,9 +1,9 @@
-﻿using Volo.Abp.Modularity;
+using Volo.Abp.Modularity;
 
 namespace Simphonis.Abp.AuditLogs;
 
 [DependsOn(
-    typeof(SimphoAuditLogsModule)
+    typeof(SimphonisAuditLogsModule)
     )]
 public class AuditLogsApplicationTestModule : AbpModule
 {
