@@ -10,10 +10,20 @@ It will also make a new service available, `IAuditLogCleaner`, which provides a 
 
 ## Installing the module
 
-Use the ABP `add-package` command to add the .NET reference in your project and register its module.
+Install the library in your project...
 
 ```bash
-abp add-package Simphonis.Abp.AuditLogs
+dotnet package add Simphonis.Abp.AuditLogs
+```
+
+... and register its module in your project's ABP module
+
+```cs
+using Simphonis.Abp.AuditLogs;
+
+[DependsOn(SimphonisAuditLogsModule)]
+public class MyModule : AbpModule
+//...
 ```
 
 ## Register the worker
