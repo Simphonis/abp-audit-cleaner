@@ -21,7 +21,7 @@ dotnet package add Simphonis.Abp.AuditLogs
 ```cs
 using Simphonis.Abp.AuditLogs;
 
-[DependsOn(SimphonisAuditLogsModule)]
+[DependsOn(typeof(SimphonisAuditLogsModule))]
 public class MyModule : AbpModule
 //...
 ```
