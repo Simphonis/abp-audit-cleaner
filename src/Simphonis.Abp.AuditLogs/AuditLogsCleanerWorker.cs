@@ -83,12 +83,12 @@ public class AuditLogsCleanerWorker : AsyncPeriodicBackgroundWorkerBase
         int result;
         if (strMaxRowCount == null)
         {
-            logger.LogWarning("Maximum delete count is not set. Using default value: {DefaultMaximumRowCount} days.", SimphonisAuditLogConsts.DefaultMaximumRowCount);
+            logger.LogWarning("Maximum delete count is not set. Using default value: {DefaultMaximumRowCount}.", SimphonisAuditLogConsts.DefaultMaximumRowCount);
             return SimphonisAuditLogConsts.DefaultMaximumRowCount;
         }
         else if (!int.TryParse(strMaxRowCount, NumberFormatInfo.InvariantInfo, out result))
         {
-            logger.LogWarning("Maximum delete count setting is not a valid integer. Using default value: {DefaultMaximumRowCount} days.", SimphonisAuditLogConsts.DefaultRetentionPeriod);
+            logger.LogWarning("Maximum delete count setting is not a valid integer. Using default value: {DefaultMaximumRowCount}.", SimphonisAuditLogConsts.DefaultRetentionPeriod);
             return SimphonisAuditLogConsts.DefaultMaximumRowCount;
         }
 
