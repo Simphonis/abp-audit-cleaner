@@ -46,7 +46,7 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
         using IDisposable _ = _dataFilter.Disable<IMultiTenant>();
 
         DateTime minimumCreationTime = _clock.Now - maxAge;
-        DateTime? securityCreationTime = await GetSecurityThreshold(maxRowCount);
+        DateTime? securityCreationTime = await GetSecurityThreshold(maxRowCount, cancellationToken);
 
         // If the security date is less restrictive than the configured date, we will use the security one
         // This avoids deleting millions of rows, which risks locking the DB for too long.
@@ -62,8 +62,9 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
     /// Returns the creation date of the Nth element in the audit logs table
     /// </summary>
     /// <param name="rowCount">Position for which we want to retrieve the creation date (after sorting by creation date)</param>
+    /// <param name="cancellationToken"></param>
     /// <returns>The creation date found, or <see langword="null"/> if the table does not contain enough rows.</returns>
-    protected virtual async Task<DateTime?> GetSecurityThreshold(int rowCount)
+    protected virtual async Task<DateTime?> GetSecurityThreshold(int rowCount, CancellationToken cancellationToken = default)
     {
         IQueryable<AuditLog> query = await _auditLogRepository.GetQueryableAsync();
 
@@ -72,7 +73,7 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
                                              .Skip(rowCount)
                                              .Take(1);
 
-        DateTime result = await _asyncExecuter.FirstOrDefaultAsync(timeList);
+        DateTime result = await _asyncExecuter.FirstOrDefaultAsync(timeList, cancellationToken);
 
         if (result == default)
         {
