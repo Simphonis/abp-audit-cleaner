@@ -1,155 +1,116 @@
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
-using Volo.Abp;
-using Volo.Abp.AuditLogging;
-using Volo.Abp.Data;
-using Volo.Abp.Linq;
-using Volo.Abp.MultiTenancy;
-using Volo.Abp.Timing;
+using Volo.Abp.TenantManagement;
 using Volo.Abp.Uow;
 using Xunit;
 
 namespace Simphonis.Abp.AuditLogs;
 
 /// <summary>
-/// Runs <see cref="AuditLogCleaner"/> against the real EF Core repository, so that ABP's data filters
-/// (in particular the multi-tenant one) apply exactly as they do in an application
+/// Cleanup tests in an application that uses the ABP tenant registry (tenant management tables and repository)
 /// </summary>
-public sealed class AuditLogCleanerEntityFrameworkCoreTests : IAsyncLifetime
+public sealed class AuditLogCleanerEntityFrameworkCoreTests : AuditLogCleanerEntityFrameworkCoreTestBase<AuditLogsTenantManagementTestModule>
 {
-    private IAbpApplicationWithInternalServiceProvider _application = null!;
-
-    private IServiceProvider ServiceProvider => _application.ServiceProvider;
-
-    private DateTime Now => ServiceProvider.GetRequiredService<IClock>().Now;
-
-    public async ValueTask InitializeAsync()
-    {
-        // Autofac is required for the property injection used by AbpDbContext, as in an ABP application
-        _application = await AbpApplicationFactory.CreateAsync<AuditLogsEntityFrameworkCoreTestModule>(options => options.UseAutofac());
-        await _application.InitializeAsync();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await _application.ShutdownAsync();
-        _application.Dispose();
-    }
-
-    private static AuditLog CreateTestEntry(DateTime executionTime, Guid? tenantId) => new(
-        Guid.NewGuid(),
-        "UnitTest",
-        tenantId,
-        null,
-        null,
-        null,
-        executionTime,
-        23,
-        "1.2.3.4",
-        "TestClient",
-        "TestClientId",
-        "asl;kfjasdl;kfjasdkl;fj",
-        "UnitTests",
-        "GET",
-        "https://www.example.org/unit-tests",
-        200,
-        null,
-        null,
-        null,
-        null,
-        new ExtraPropertyDictionary(),
-        null,
-        null,
-        null,
-        "Test entry");
-
     /// <summary>
-    /// Inserts an audit log entry as the given tenant would, in its own unit of work
+    /// Registers a new tenant in the ABP tenant registry, and returns its identifier
     /// </summary>
-    private async Task InsertAsync(DateTime executionTime, Guid? tenantId)
-    {
-        using (ServiceProvider.GetRequiredService<ICurrentTenant>().Change(tenantId))
-        {
-            using IUnitOfWork uow = ServiceProvider.GetRequiredService<IUnitOfWorkManager>().Begin(requiresNew: true);
-            await ServiceProvider.GetRequiredService<IAuditLogRepository>().InsertAsync(CreateTestEntry(executionTime, tenantId), cancellationToken: TestContext.Current.CancellationToken);
-            await uow.CompleteAsync(TestContext.Current.CancellationToken);
-        }
-    }
-
-    /// <summary>
-    /// Runs the cleaner from the host, in its own unit of work, like the worker does
-    /// </summary>
-    private async Task CleanAsync(TimeSpan maxAge, int maxRowCount)
+    private async Task<Guid> CreateTenantAsync(string name)
     {
         using IUnitOfWork uow = ServiceProvider.GetRequiredService<IUnitOfWorkManager>().Begin(requiresNew: true);
-        await ServiceProvider.GetRequiredService<IAuditLogCleaner>().CleanAsync(maxAge, maxRowCount, TestContext.Current.CancellationToken);
+        Tenant tenant = await ServiceProvider.GetRequiredService<ITenantManager>().CreateAsync(name);
+        await ServiceProvider.GetRequiredService<ITenantRepository>().InsertAsync(tenant, cancellationToken: TestContext.Current.CancellationToken);
         await uow.CompleteAsync(TestContext.Current.CancellationToken);
-    }
-
-    /// <summary>
-    /// Returns the execution times of all the entries left in the database, regardless of their tenant
-    /// </summary>
-    private async Task<List<DateTime>> GetRemainingExecutionTimesAsync()
-    {
-        using IDisposable _ = ServiceProvider.GetRequiredService<IDataFilter>().Disable<IMultiTenant>();
-        using IUnitOfWork uow = ServiceProvider.GetRequiredService<IUnitOfWorkManager>().Begin(requiresNew: true);
-
-        IQueryable<AuditLog> query = await ServiceProvider.GetRequiredService<IAuditLogRepository>().GetQueryableAsync();
-        List<DateTime> result = await ServiceProvider.GetRequiredService<IAsyncQueryableExecuter>()
-            .ToListAsync(query.OrderBy(a => a.ExecutionTime).Select(a => a.ExecutionTime), TestContext.Current.CancellationToken);
-
-        await uow.CompleteAsync(TestContext.Current.CancellationToken);
-        return result;
+        return tenant.Id;
     }
 
     [Fact]
     public async Task Should_Clean_AuditLogs_Of_All_Tenants()
     {
         // Arrange
-        DateTime recentDate = Now.AddDays(-25);
-        await InsertAsync(recentDate, null);                        // Recent enough entry that will be kept
-        await InsertAsync(Now.AddDays(-35), null);                  // Older entry that will be deleted - host (no tenant)
-        await InsertAsync(Now.AddDays(-36), Guid.NewGuid());        // Older entry that will be deleted - with tenant
+        await StartApplicationAsync(isMultiTenancyEnabled: true);
+        Guid tenant1 = await CreateTenantAsync("Tenant1");
+        Guid tenant2 = await CreateTenantAsync("Tenant2");
+
+        DateTime now = Now;
+        await InsertAsync(now.AddDays(-25), null);          // Recent enough entry that will be kept - host
+        await InsertAsync(now.AddDays(-35), null);          // Older entry that will be deleted - host
+        await InsertAsync(now.AddDays(-36), tenant1);       // Older entry that will be deleted - tenant 1
+        await InsertAsync(now.AddDays(-37), tenant2);       // Older entry that will be deleted - tenant 2
+        await InsertAsync(now.AddDays(-20), tenant2);       // Recent enough entry that will be kept - tenant 2
 
         // Act
         await CleanAsync(TimeSpan.FromDays(30), 10000);
 
         // Assert
-        // we should only have the more recent entry left
-        (await GetRemainingExecutionTimesAsync()).ShouldBe([recentDate]);
+        // we should only have the more recent entries left
+        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-25), now.AddDays(-20)]);
     }
 
     [Fact]
-    public async Task Applies_Security_Threshold_Across_Tenants()
+    public async Task Applies_Security_Threshold_Per_Tenant()
     {
         // Arrange
-        // 11 old rows spread across the host and two tenants, with a max number of deletions of 10 rows:
-        // the threshold must count the rows of all tenants, not only the host ones
-        DateTime now = Now;
-        Guid tenant1 = Guid.NewGuid();
-        Guid tenant2 = Guid.NewGuid();
+        // With a max number of deletions of 2 rows, each tenant (and the host) can lose up to 2 rows, regardless of the others
+        await StartApplicationAsync(isMultiTenancyEnabled: true);
+        Guid tenant1 = await CreateTenantAsync("Tenant1");
+        Guid tenant2 = await CreateTenantAsync("Tenant2");
 
+        DateTime now = Now;
+        // Host: 3 old rows, the most recent one is kept
         await InsertAsync(now.AddDays(-300), null);
-        await InsertAsync(now.AddDays(-290), tenant1);
-        await InsertAsync(now.AddDays(-280), tenant2);
-        await InsertAsync(now.AddDays(-270), null);
+        await InsertAsync(now.AddDays(-290), null);
+        await InsertAsync(now.AddDays(-280), null);
+        // Tenant 1: 2 old rows, all deleted
+        await InsertAsync(now.AddDays(-270), tenant1);
         await InsertAsync(now.AddDays(-260), tenant1);
+        // Tenant 2: 4 old rows, the 2 most recent ones are kept, and a recent row that is kept
         await InsertAsync(now.AddDays(-250), tenant2);
-        await InsertAsync(now.AddDays(-240), null);
-        await InsertAsync(now.AddDays(-230), tenant1);
+        await InsertAsync(now.AddDays(-240), tenant2);
+        await InsertAsync(now.AddDays(-230), tenant2);
         await InsertAsync(now.AddDays(-220), tenant2);
-        await InsertAsync(now.AddDays(-210), null);
-        await InsertAsync(now.AddDays(-200), tenant1);
-        // 👆 Data too old that we want to delete (but there's too much of it so we'll keep the most recent)
-        // 👇 Data to keep
-        await InsertAsync(now.AddDays(-30), tenant2);
+        await InsertAsync(now.AddDays(-10), tenant2);
 
         // Act
-        await CleanAsync(TimeSpan.FromDays(30), 10);
+        await CleanAsync(TimeSpan.FromDays(30), 2);
 
         // Assert
-        // We should have two entries left: the one that is recent enough, and the one from 200 days ago
-        // which could not be included in the 10 rows
-        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-200), now.AddDays(-30)]);
+        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-280), now.AddDays(-230), now.AddDays(-220), now.AddDays(-10)]);
+    }
+
+    [Fact]
+    public async Task Should_Not_Clean_AuditLogs_Of_Unregistered_Tenants()
+    {
+        // Arrange
+        // The tenants to clean come from the tenant registry: the logs of a tenant that is not registered (or was deleted) are left untouched
+        await StartApplicationAsync(isMultiTenancyEnabled: true);
+
+        DateTime now = Now;
+        await InsertAsync(now.AddDays(-35), null);              // Older entry that will be deleted - host
+        await InsertAsync(now.AddDays(-36), Guid.NewGuid());    // Older entry of an unknown tenant, that will be kept
+
+        // Act
+        await CleanAsync(TimeSpan.FromDays(30), 10000);
+
+        // Assert
+        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-36)]);
+    }
+
+    [Fact]
+    public async Task Should_Only_Clean_Host_AuditLogs_When_MultiTenancy_Is_Disabled()
+    {
+        // Arrange
+        await StartApplicationAsync(isMultiTenancyEnabled: false);
+        Guid tenant = await CreateTenantAsync("Tenant1");
+
+        DateTime now = Now;
+        await InsertAsync(now.AddDays(-25), null);      // Recent enough entry that will be kept
+        await InsertAsync(now.AddDays(-35), null);      // Older entry that will be deleted
+        await InsertAsync(now.AddDays(-36), tenant);    // Older entry of a registered tenant, that will be kept
+
+        // Act
+        await CleanAsync(TimeSpan.FromDays(30), 10000);
+
+        // Assert
+        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-36), now.AddDays(-25)]);
     }
 }
