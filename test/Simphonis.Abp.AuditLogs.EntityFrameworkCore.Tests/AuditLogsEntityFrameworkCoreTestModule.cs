@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp;
 using Volo.Abp.AuditLogging.EntityFrameworkCore;
 using Volo.Abp.Autofac;
@@ -12,7 +13,9 @@ using Volo.Abp.Modularity;
 namespace Simphonis.Abp.AuditLogs;
 
 /// <summary>
-/// Minimal ABP application using the real audit log EF Core repository, on top of an in-memory SQLite database
+/// Minimal ABP application using the real audit log EF Core repository, on top of an in-memory SQLite database.
+/// It has no tenant management tables nor repository, like an application that does not use the ABP tenant registry.
+/// Multi-tenancy is left to its ABP default (disabled): tests enable it when they create the application.
 /// </summary>
 [DependsOn(
     typeof(SimphonisAuditLogsModule),
@@ -30,6 +33,9 @@ public class AuditLogsEntityFrameworkCoreTestModule : AbpModule
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
         _sqliteConnection = CreateDatabaseAndGetConnection();
+
+        // Exposed so that dependent modules can create their own tables in the same database
+        context.Services.AddSingleton(_sqliteConnection);
 
         Configure<AbpDbContextOptions>(options =>
         {
@@ -50,11 +56,7 @@ public class AuditLogsEntityFrameworkCoreTestModule : AbpModule
         SqliteConnection connection = new("Data Source=:memory:");
         connection.Open();
 
-        DbContextOptions<AbpAuditLoggingDbContext> options = new DbContextOptionsBuilder<AbpAuditLoggingDbContext>()
-            .UseSqlite(connection)
-            .Options;
-
-        using AbpAuditLoggingDbContext context = new(options);
+        using AbpAuditLoggingDbContext context = new(new DbContextOptionsBuilder<AbpAuditLoggingDbContext>().UseSqlite(connection).Options);
         context.GetService<IRelationalDatabaseCreator>().CreateTables();
 
         return connection;
