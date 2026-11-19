@@ -19,6 +19,11 @@ public static class SimphonisAuditLogConsts
     public const int DefaultMaximumRowCount = 10_000;
 
     /// <summary>
+    /// Default value for the maximum number of audit logs deleted by a single statement
+    /// </summary>
+    public const int DefaultDeleteBatchSize = 1_000;
+
+    /// <summary>
     /// Default interval, in minutes, between two runs of the cleanup worker
     /// </summary>
     public const int DefaultWorkerPeriodInMinutes = 10;

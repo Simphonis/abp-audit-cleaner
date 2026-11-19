@@ -60,3 +60,19 @@ Additionnaly, the worker uses some configuration values stored in the ABP Settin
 | Simphonis.AuditLogs.MaxDeleteCount | 10000 | Maximum number of audit log rows that can be removed for each tenant (the host counting as one) in a single worker run. This setting exists to avoid overloading the database if there are a very large number of old rows to delete. Note that this value cannot be set above 1000000. |
 
 These settings are read at the host level, and apply to all tenants.
+
+## Delete batch size
+Whether it is called by the worker or directly, `IAuditLogCleaner` deletes the old rows of each tenant oldest first, in batches. Each batch is deleted by its own statement, in its own unit of work, so that the database locks are released between two batches: the application's audit log writes wait at most for one batch, instead of the whole cleanup.
+
+The batch size is set in `AuditLogCleanerOptions` (1000 rows by default, at most 1000000):
+```cs
+public override void ConfigureServices(ServiceConfigurationContext context)
+{
+    Configure<AuditLogCleanerOptions>(opts =>
+    {
+        opts.DeleteBatchSize = 500;
+    });
+}
+```
+
+This was made to limit the chance that large removal of audit log data locks the database and degrades the user experience while it is ongoing.
