@@ -80,9 +80,10 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
         }
 
         // The rows of the tenants that are not listed above (deleted from the tenant store, never registered in it,
-        // or any tenant when multi-tenancy is disabled) would never be deleted otherwise
-        IReadOnlyList<Guid> outdatedTenantIds = await GetTenantIdsWithOutdatedRowsInHostDatabaseAsync(minimumCreationTime, cancellationToken);
-        foreach (Guid tenantId in outdatedTenantIds.Where(id => !tenantIds.Contains(id)))
+        // or any tenant when multi-tenancy is disabled) would never be deleted otherwise.
+        // Tenants without outdated rows are skipped by DeleteOutdatedRowsAsync, which reads their oldest row only.
+        IReadOnlyList<Guid> hostDatabaseTenantIds = await GetTenantIdsInHostDatabaseAsync(cancellationToken);
+        foreach (Guid tenantId in hostDatabaseTenantIds.Where(id => !tenantIds.Contains(id)))
         {
             cancellationToken.ThrowIfCancellationRequested();
             await CleanUnlistedTenantAsync(tenantId, minimumCreationTime, maxRowCount, cancellationToken);
@@ -93,7 +94,7 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
     /// Returns the identifiers of the tenants whose audit logs must be cleaned in their own database, <see langword="null"/> standing for the host.
     /// When multi-tenancy is disabled, only the host is returned. Otherwise, the host is returned along with all the tenants
     /// of the application's <see cref="ITenantStore"/> (ABP Tenant Management, SaaS module, or tenants defined in the configuration).
-    /// The other tenants that have outdated rows in the host database are then cleaned by <see cref="CleanUnlistedTenantAsync"/>.
+    /// The other tenants found in the host database are then cleaned by <see cref="CleanUnlistedTenantAsync"/>.
     /// </summary>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
@@ -114,27 +115,59 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
     }
 
     /// <summary>
-    /// Returns the distinct identifiers of the tenants that have audit log entries executed before <paramref name="minimumCreationTime"/>
-    /// in the host database, the host itself excluded.
+    /// Returns the distinct identifiers of the tenants that have audit log entries in the host database, the host itself excluded.
     /// </summary>
-    /// <param name="minimumCreationTime">Only the tenants having entries executed before this time are returned</param>
+    /// <remarks>
+    /// A <c>SELECT DISTINCT</c> would read the whole audit log index on every run, since database engines such as SQL Server cannot skip
+    /// from one tenant to the next in the (TenantId, ExecutionTime) index. The tenants are read one at a time instead,
+    /// each query seeking the first tenant identifier greater than the previous one: one index seek per tenant, whatever the table size.
+    /// </remarks>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
-    protected virtual async Task<IReadOnlyList<Guid>> GetTenantIdsWithOutdatedRowsInHostDatabaseAsync(DateTime minimumCreationTime, CancellationToken cancellationToken = default)
+    protected virtual async Task<IReadOnlyList<Guid>> GetTenantIdsInHostDatabaseAsync(CancellationToken cancellationToken = default)
     {
         using IDisposable tenantScope = _currentTenant.Change(null);
         using IDisposable filterScope = _dataFilter.Disable<IMultiTenant>();
         // Using a separate unit of work to run this potentially expensive query
         using IUnitOfWork uow = _unitOfWorkManager.Begin(requiresNew: true);
 
-        IQueryable<AuditLog> query = await _auditLogRepository.GetQueryableAsync();
-        IQueryable<Guid> tenantIds = query.Where(l => l.TenantId != null && l.ExecutionTime < minimumCreationTime)
-                                          .Select(l => l.TenantId!.Value)
-                                          .Distinct();
+        List<Guid> result = [];
+        Guid? nextTenantId = await GetNextTenantIdAsync(null, cancellationToken);
+        while (nextTenantId.HasValue)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            result.Add(nextTenantId.Value);
+            nextTenantId = await GetNextTenantIdAsync(nextTenantId.Value, cancellationToken);
+        }
 
-        List<Guid> result = await _asyncExecuter.ToListAsync(tenantIds, cancellationToken);
         await uow.CompleteAsync(cancellationToken);
         return result;
+    }
+
+    /// <summary>
+    /// Returns the smallest tenant identifier of the audit log entries that is greater than <paramref name="previousTenantId"/>,
+    /// in the order of the database engine.
+    /// </summary>
+    /// <param name="previousTenantId">Identifier returned by the previous call, or <see langword="null"/> to get the first one</param>
+    /// <param name="cancellationToken"></param>
+    /// <returns>The identifier found, or <see langword="null"/> if there is none left.</returns>
+    protected virtual async Task<Guid?> GetNextTenantIdAsync(Guid? previousTenantId, CancellationToken cancellationToken = default)
+    {
+        IQueryable<AuditLog> query = await _auditLogRepository.GetQueryableAsync();
+        query = query.Where(l => l.TenantId != null);
+
+        if (previousTenantId.HasValue)
+        {
+            Guid previous = previousTenantId.Value;
+            // Translated to a "greater than" comparison: the database engine's own Guid order is used, both here and in the sort below
+            query = query.Where(l => l.TenantId!.Value.CompareTo(previous) > 0);
+        }
+
+        IQueryable<Guid?> tenantIds = query.OrderBy(l => l.TenantId)
+                                           .Select(l => l.TenantId)
+                                           .Take(1);
+
+        return await _asyncExecuter.FirstOrDefaultAsync(tenantIds, cancellationToken);
     }
 
     /// <summary>

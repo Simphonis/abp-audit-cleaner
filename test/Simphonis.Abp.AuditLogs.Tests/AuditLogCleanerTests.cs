@@ -53,8 +53,8 @@ public sealed class AuditLogCleanerTests : AuditLogsApplicationTestBase
         IAsyncQueryableExecuter asyncExecuter = Substitute.For<IAsyncQueryableExecuter>();
         asyncExecuter.FirstOrDefaultAsync(Arg.Any<IQueryable<DateTime>>(), Arg.Any<CancellationToken>())
                      .Returns(call => Task.FromResult(call.Arg<IQueryable<DateTime>>().FirstOrDefault()));
-        asyncExecuter.ToListAsync(Arg.Any<IQueryable<Guid>>(), Arg.Any<CancellationToken>())
-                     .Returns(call => Task.FromResult(call.Arg<IQueryable<Guid>>().ToList()));
+        asyncExecuter.FirstOrDefaultAsync(Arg.Any<IQueryable<Guid?>>(), Arg.Any<CancellationToken>())
+                     .Returns(call => Task.FromResult(call.Arg<IQueryable<Guid?>>().FirstOrDefault()));
 
         IUnitOfWorkManager unitOfWorkManager = Substitute.For<IUnitOfWorkManager>();
         unitOfWorkManager.Begin(Arg.Any<AbpUnitOfWorkOptions>(), Arg.Any<bool>())
