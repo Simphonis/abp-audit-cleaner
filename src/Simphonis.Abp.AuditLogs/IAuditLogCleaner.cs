@@ -10,8 +10,10 @@ public interface IAuditLogCleaner
     /// Note that these deletes are made on their own unit of work.
     /// </summary>
     /// <remarks>
-    /// When ABP multi-tenancy is disabled, only the host entries (those without a tenant) are cleaned.
-    /// When it is enabled, the host and every tenant listed by <see cref="Volo.Abp.MultiTenancy.ITenantStore"/> are cleaned one after the other.
+    /// When ABP multi-tenancy is enabled, the host and every tenant listed by <see cref="Volo.Abp.MultiTenancy.ITenantStore"/> are cleaned one after the other,
+    /// each in its own database. Then, every other tenant that has outdated entries in the host database (a tenant that was deleted, or never registered)
+    /// is cleaned in the host database. When multi-tenancy is disabled, the host and all the tenants found in its database are cleaned.
+    /// The entries of an unlisted tenant that are stored in a database of its own cannot be reached, and are left untouched.
     /// </remarks>
     /// <param name="maxAge">Maximum age beyond which entries must be deleted</param>
     /// <param name="maxRowCount">

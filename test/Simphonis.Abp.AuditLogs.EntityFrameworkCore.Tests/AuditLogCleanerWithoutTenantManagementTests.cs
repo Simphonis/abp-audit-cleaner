@@ -30,20 +30,21 @@ public sealed class AuditLogCleanerWithoutTenantManagementTests : AuditLogCleane
     }
 
     [Fact]
-    public async Task Should_Not_Clean_Tenant_AuditLogs_When_MultiTenancy_Is_Disabled()
+    public async Task Should_Clean_Tenant_AuditLogs_When_MultiTenancy_Is_Disabled()
     {
         // Arrange
         await StartApplicationAsync(isMultiTenancyEnabled: false);
 
         DateTime now = Now;
         await InsertAsync(now.AddDays(-35), null);              // Older entry that will be deleted
-        await InsertAsync(now.AddDays(-36), Guid.NewGuid());    // Older entry with a tenant, that will be kept
+        await InsertAsync(now.AddDays(-36), Guid.NewGuid());    // Older entry with a tenant, that will be deleted
+        await InsertAsync(now.AddDays(-20), Guid.NewGuid());    // Recent enough entry with a tenant, that will be kept
 
         // Act
         await CleanAsync(TimeSpan.FromDays(30), 10000);
 
         // Assert
-        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-36)]);
+        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-20)]);
     }
 
     [Fact]
@@ -77,13 +78,38 @@ public sealed class AuditLogCleanerWithoutTenantManagementTests : AuditLogCleane
         await InsertAsync(now.AddDays(-25), null);              // Recent enough entry that will be kept - host
         await InsertAsync(now.AddDays(-35), null);              // Older entry that will be deleted - host
         await InsertAsync(now.AddDays(-36), configuredTenant);  // Older entry that will be deleted - configured tenant
-        await InsertAsync(now.AddDays(-37), Guid.NewGuid());    // Older entry of an unknown tenant, that will be kept
+        await InsertAsync(now.AddDays(-37), Guid.NewGuid());    // Older entry of an unknown tenant, that will be deleted
 
         // Act
         await CleanAsync(TimeSpan.FromDays(30), 10000);
 
         // Assert
-        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-37), now.AddDays(-25)]);
+        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-25)]);
+    }
+
+    [Fact]
+    public async Task Applies_Security_Threshold_Per_Unlisted_Tenant()
+    {
+        // Arrange
+        // An unknown tenant is cleaned once, within the same limit as the listed tenants
+        Guid configuredTenant = Guid.NewGuid();
+        Guid unknownTenant = Guid.NewGuid();
+        await StartApplicationAsync(isMultiTenancyEnabled: true, services =>
+            services.Configure<AbpDefaultTenantStoreOptions>(o => o.Tenants = [new TenantConfiguration(configuredTenant, "Tenant1")]));
+
+        DateTime now = Now;
+        await InsertAsync(now.AddDays(-300), configuredTenant);
+        await InsertAsync(now.AddDays(-290), configuredTenant);
+        await InsertAsync(now.AddDays(-280), configuredTenant);     // Old, but beyond the 2 rows that can be deleted: kept
+        await InsertAsync(now.AddDays(-270), unknownTenant);
+        await InsertAsync(now.AddDays(-260), unknownTenant);
+        await InsertAsync(now.AddDays(-250), unknownTenant);        // Old, but beyond the 2 rows that can be deleted: kept
+
+        // Act
+        await CleanAsync(TimeSpan.FromDays(30), 2);
+
+        // Assert
+        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-280), now.AddDays(-250)]);
     }
 
     [Fact]

@@ -78,12 +78,22 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
             cancellationToken.ThrowIfCancellationRequested();
             await CleanTenantAsync(tenantId, minimumCreationTime, maxRowCount, cancellationToken);
         }
+
+        // The rows of the tenants that are not listed above (deleted from the tenant store, never registered in it,
+        // or any tenant when multi-tenancy is disabled) would never be deleted otherwise
+        IReadOnlyList<Guid> outdatedTenantIds = await GetTenantIdsWithOutdatedRowsInHostDatabaseAsync(minimumCreationTime, cancellationToken);
+        foreach (Guid tenantId in outdatedTenantIds.Where(id => !tenantIds.Contains(id)))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await CleanUnlistedTenantAsync(tenantId, minimumCreationTime, maxRowCount, cancellationToken);
+        }
     }
 
     /// <summary>
-    /// Returns the identifiers of the tenants whose audit logs must be cleaned, <see langword="null"/> standing for the host.
+    /// Returns the identifiers of the tenants whose audit logs must be cleaned in their own database, <see langword="null"/> standing for the host.
     /// When multi-tenancy is disabled, only the host is returned. Otherwise, the host is returned along with all the tenants
     /// of the application's <see cref="ITenantStore"/> (ABP Tenant Management, SaaS module, or tenants defined in the configuration).
+    /// The other tenants that have outdated rows in the host database are then cleaned by <see cref="CleanUnlistedTenantAsync"/>.
     /// </summary>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
@@ -104,14 +114,32 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
     }
 
     /// <summary>
-    /// Deletes the audit log entries of a single tenant that were created before <paramref name="minimumCreationTime"/>,
-    /// within the limit of <paramref name="maxRowCount"/> rows, oldest first, in batches of <see cref="AuditLogCleanerOptions.DeleteBatchSize"/> rows.
-    /// Each batch is deleted by its own statement, in its own unit of work, so that the database locks are released between two batches.
+    /// Returns the distinct identifiers of the tenants that have audit log entries executed before <paramref name="minimumCreationTime"/>
+    /// in the host database, the host itself excluded.
     /// </summary>
-    /// <remarks>
-    /// When more rows than a batch share the same execution time, they are deleted together, even if they exceed the batch size or <paramref name="maxRowCount"/>:
-    /// the cleanup could not go past them otherwise.
-    /// </remarks>
+    /// <param name="minimumCreationTime">Only the tenants having entries executed before this time are returned</param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    protected virtual async Task<IReadOnlyList<Guid>> GetTenantIdsWithOutdatedRowsInHostDatabaseAsync(DateTime minimumCreationTime, CancellationToken cancellationToken = default)
+    {
+        using IDisposable tenantScope = _currentTenant.Change(null);
+        using IDisposable filterScope = _dataFilter.Disable<IMultiTenant>();
+        // Using a separate unit of work to run this potentially expensive query
+        using IUnitOfWork uow = _unitOfWorkManager.Begin(requiresNew: true);
+
+        IQueryable<AuditLog> query = await _auditLogRepository.GetQueryableAsync();
+        IQueryable<Guid> tenantIds = query.Where(l => l.TenantId != null && l.ExecutionTime < minimumCreationTime)
+                                          .Select(l => l.TenantId!.Value)
+                                          .Distinct();
+
+        List<Guid> result = await _asyncExecuter.ToListAsync(tenantIds, cancellationToken);
+        await uow.CompleteAsync(cancellationToken);
+        return result;
+    }
+
+    /// <summary>
+    /// Deletes the outdated audit log entries of a single tenant, in the tenant's database. See <see cref="DeleteOutdatedRowsAsync"/>.
+    /// </summary>
     /// <param name="tenantId">Identifier of the tenant to clean, or <see langword="null"/> for the host</param>
     /// <param name="minimumCreationTime">Entries executed before this time are deleted</param>
     /// <param name="maxRowCount">Maximum number of rows to delete for this tenant</param>
@@ -119,9 +147,47 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
     /// <returns></returns>
     protected virtual async Task CleanTenantAsync(Guid? tenantId, DateTime minimumCreationTime, int maxRowCount, CancellationToken cancellationToken = default)
     {
-        // Changing the current tenant selects the tenant's database, for tenants that have their own connection string.
-        // The tenant filter is then applied explicitly, so the result does not depend on how the repository applies data filters.
+        // Changing the current tenant selects the tenant's database, for tenants that have their own connection string
         using IDisposable tenantScope = _currentTenant.Change(tenantId);
+        await DeleteOutdatedRowsAsync(tenantId, minimumCreationTime, maxRowCount, cancellationToken);
+    }
+
+    /// <summary>
+    /// Deletes the outdated audit log entries of a tenant that is not listed by <see cref="GetTenantIdsAsync"/>, in the host database.
+    /// See <see cref="DeleteOutdatedRowsAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// The tenant's rows are deleted from the host database: the connection string of a tenant that the tenant store does not know
+    /// cannot be resolved. The rows it may have in a database of its own are out of reach.
+    /// </remarks>
+    /// <param name="tenantId">Identifier of the tenant to clean</param>
+    /// <param name="minimumCreationTime">Entries executed before this time are deleted</param>
+    /// <param name="maxRowCount">Maximum number of rows to delete for this tenant</param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    protected virtual async Task CleanUnlistedTenantAsync(Guid tenantId, DateTime minimumCreationTime, int maxRowCount, CancellationToken cancellationToken = default)
+    {
+        using IDisposable tenantScope = _currentTenant.Change(null);
+        await DeleteOutdatedRowsAsync(tenantId, minimumCreationTime, maxRowCount, cancellationToken);
+    }
+
+    /// <summary>
+    /// Deletes the audit log entries of a single tenant that were created before <paramref name="minimumCreationTime"/>, from the database of the current tenant,
+    /// within the limit of <paramref name="maxRowCount"/> rows, oldest first, in batches of <see cref="AuditLogCleanerOptions.DeleteBatchSize"/> rows.
+    /// Each batch is deleted by its own statement, in its own unit of work, so that the database locks are released between two batches.
+    /// </summary>
+    /// <remarks>
+    /// When more rows than a batch share the same execution time, they are deleted together, even if they exceed the batch size or <paramref name="maxRowCount"/>:
+    /// the cleanup could not go past them otherwise.
+    /// </remarks>
+    /// <param name="tenantId">Identifier of the tenant whose rows are deleted, or <see langword="null"/> for the host</param>
+    /// <param name="minimumCreationTime">Entries executed before this time are deleted</param>
+    /// <param name="maxRowCount">Maximum number of rows to delete for this tenant</param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    protected virtual async Task DeleteOutdatedRowsAsync(Guid? tenantId, DateTime minimumCreationTime, int maxRowCount, CancellationToken cancellationToken = default)
+    {
+        // The tenant filter is applied explicitly, so the result depends neither on the current tenant nor on how the repository applies data filters
         using IDisposable filterScope = _dataFilter.Disable<IMultiTenant>();
 
         DateTime? oldestExecutionTime;

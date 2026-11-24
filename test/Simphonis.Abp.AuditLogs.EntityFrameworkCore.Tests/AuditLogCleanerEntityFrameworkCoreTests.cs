@@ -23,6 +23,16 @@ public sealed class AuditLogCleanerEntityFrameworkCoreTests : AuditLogCleanerEnt
         return tenant.Id;
     }
 
+    /// <summary>
+    /// Deletes a tenant from the ABP tenant registry
+    /// </summary>
+    private async Task DeleteTenantAsync(Guid tenantId)
+    {
+        using IUnitOfWork uow = ServiceProvider.GetRequiredService<IUnitOfWorkManager>().Begin(requiresNew: true);
+        await ServiceProvider.GetRequiredService<ITenantRepository>().DeleteAsync(tenantId, cancellationToken: TestContext.Current.CancellationToken);
+        await uow.CompleteAsync(TestContext.Current.CancellationToken);
+    }
+
     [Fact]
     public async Task Should_Clean_AuditLogs_Of_All_Tenants()
     {
@@ -78,25 +88,45 @@ public sealed class AuditLogCleanerEntityFrameworkCoreTests : AuditLogCleanerEnt
     }
 
     [Fact]
-    public async Task Should_Not_Clean_AuditLogs_Of_Unregistered_Tenants()
+    public async Task Should_Clean_AuditLogs_Of_Unregistered_Tenants()
     {
         // Arrange
-        // The tenants to clean come from the tenant registry: the logs of a tenant that is not registered (or was deleted) are left untouched
         await StartApplicationAsync(isMultiTenancyEnabled: true);
 
         DateTime now = Now;
         await InsertAsync(now.AddDays(-35), null);              // Older entry that will be deleted - host
-        await InsertAsync(now.AddDays(-36), Guid.NewGuid());    // Older entry of an unknown tenant, that will be kept
+        await InsertAsync(now.AddDays(-36), Guid.NewGuid());    // Older entry of an unknown tenant, that will be deleted
+        await InsertAsync(now.AddDays(-20), Guid.NewGuid());    // Recent enough entry of an unknown tenant, that will be kept
 
         // Act
         await CleanAsync(TimeSpan.FromDays(30), 10000);
 
         // Assert
-        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-36)]);
+        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-20)]);
     }
 
     [Fact]
-    public async Task Should_Only_Clean_Host_AuditLogs_When_MultiTenancy_Is_Disabled()
+    public async Task Should_Clean_AuditLogs_Of_Deleted_Tenants()
+    {
+        // Arrange
+        // A deleted tenant is no longer listed by the tenant store (tenant management soft-deletes it)
+        await StartApplicationAsync(isMultiTenancyEnabled: true);
+        Guid deletedTenant = await CreateTenantAsync("DeletedTenant");
+
+        DateTime now = Now;
+        await InsertAsync(now.AddDays(-25), deletedTenant);     // Recent enough entry that will be kept
+        await InsertAsync(now.AddDays(-35), deletedTenant);     // Older entry that will be deleted
+        await DeleteTenantAsync(deletedTenant);
+
+        // Act
+        await CleanAsync(TimeSpan.FromDays(30), 10000);
+
+        // Assert
+        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-25)]);
+    }
+
+    [Fact]
+    public async Task Should_Clean_Tenant_AuditLogs_When_MultiTenancy_Is_Disabled()
     {
         // Arrange
         await StartApplicationAsync(isMultiTenancyEnabled: false);
@@ -105,12 +135,12 @@ public sealed class AuditLogCleanerEntityFrameworkCoreTests : AuditLogCleanerEnt
         DateTime now = Now;
         await InsertAsync(now.AddDays(-25), null);      // Recent enough entry that will be kept
         await InsertAsync(now.AddDays(-35), null);      // Older entry that will be deleted
-        await InsertAsync(now.AddDays(-36), tenant);    // Older entry of a registered tenant, that will be kept
+        await InsertAsync(now.AddDays(-36), tenant);    // Older entry of a registered tenant, that will be deleted
 
         // Act
         await CleanAsync(TimeSpan.FromDays(30), 10000);
 
         // Assert
-        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-36), now.AddDays(-25)]);
+        (await GetRemainingExecutionTimesAsync()).ShouldBe([now.AddDays(-25)]);
     }
 }

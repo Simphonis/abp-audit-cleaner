@@ -8,7 +8,8 @@ The library contains an ABP module, which can be added to any solution.
 By adding it, you may choose to register a worker to run regularly. When this worker runs, it deletes all audit log entries whose age exceeds a configured value, which is one year by default.
 It will also make a new service available, `IAuditLogCleaner`, which provides a utility method to manually clean up the audit logs, if the worker option does not work for you.
 
-Note that the library will automatically clean up logs for all tenants if multi-tenancy is enabled.
+Note that the library will automatically clean up logs for all tenants if multi-tenancy is enabled. The only case where entries might not be cleaned up is when a disabled tenant had its data
+stored in a separate database. In this case, the database is unreachable and cannot be cleaned.
 
 ## Installing the module
 

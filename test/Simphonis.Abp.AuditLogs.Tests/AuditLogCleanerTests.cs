@@ -15,7 +15,7 @@ namespace Simphonis.Abp.AuditLogs;
 
 /// <summary>
 /// Tests of the batching logic of <see cref="AuditLogCleaner"/>, against an in-memory list of audit logs.
-/// Multi-tenancy is disabled: only the host rows are cleaned.
+/// Multi-tenancy is disabled: the host is the only listed tenant, and the rows of the other tenants are cleaned as unlisted tenants.
 /// </summary>
 public sealed class AuditLogCleanerTests : AuditLogsApplicationTestBase
 {
@@ -53,6 +53,8 @@ public sealed class AuditLogCleanerTests : AuditLogsApplicationTestBase
         IAsyncQueryableExecuter asyncExecuter = Substitute.For<IAsyncQueryableExecuter>();
         asyncExecuter.FirstOrDefaultAsync(Arg.Any<IQueryable<DateTime>>(), Arg.Any<CancellationToken>())
                      .Returns(call => Task.FromResult(call.Arg<IQueryable<DateTime>>().FirstOrDefault()));
+        asyncExecuter.ToListAsync(Arg.Any<IQueryable<Guid>>(), Arg.Any<CancellationToken>())
+                     .Returns(call => Task.FromResult(call.Arg<IQueryable<Guid>>().ToList()));
 
         IUnitOfWorkManager unitOfWorkManager = Substitute.For<IUnitOfWorkManager>();
         unitOfWorkManager.Begin(Arg.Any<AbpUnitOfWorkOptions>(), Arg.Any<bool>())
@@ -129,16 +131,57 @@ public sealed class AuditLogCleanerTests : AuditLogsApplicationTestBase
         AddOutdatedRows(25);
         AddRow(Now.AddDays(-10));                       // Recent: kept
         AddRow(RetentionLimit);                         // Exactly at the retention limit: kept
-        AddRow(Now.AddDays(-50), Guid.NewGuid());       // Outdated, but belongs to a tenant: kept
         AuditLogCleaner cleaner = CreateCleaner(deleteBatchSize: 10);
 
         // Act
         await cleaner.CleanAsync(MaxAge, 10_000, TestContext.Current.CancellationToken);
 
         // Assert
-        GetRemainingExecutionTimes().ShouldBe([Now.AddDays(-50), RetentionLimit, Now.AddDays(-10)]);
+        GetRemainingExecutionTimes().ShouldBe([RetentionLimit, Now.AddDays(-10)]);
         // 10 + 10 + 5 rows
         _deleteUnitsOfWork.Count.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task Should_Delete_Outdated_Rows_Of_Unlisted_Tenants()
+    {
+        // Arrange
+        Guid tenant1 = Guid.NewGuid();
+        Guid tenant2 = Guid.NewGuid();
+        AddRow(Now.AddDays(-50), tenant1);              // Outdated: deleted
+        AddRow(Now.AddDays(-45), tenant1);              // Outdated: deleted
+        AddRow(Now.AddDays(-10), tenant1);              // Recent: kept
+        AddRow(Now.AddDays(-5), tenant2);               // Recent, and the tenant's only row: kept
+        AuditLogCleaner cleaner = CreateCleaner(deleteBatchSize: 10);
+
+        // Act
+        await cleaner.CleanAsync(MaxAge, 10_000, TestContext.Current.CancellationToken);
+
+        // Assert
+        GetRemainingExecutionTimes().ShouldBe([Now.AddDays(-10), Now.AddDays(-5)]);
+        // Only tenant 1 has outdated rows
+        _deleteUnitsOfWork.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Should_Delete_No_More_Than_Max_Row_Count_Per_Unlisted_Tenant()
+    {
+        // Arrange
+        Guid tenant1 = Guid.NewGuid();
+        Guid tenant2 = Guid.NewGuid();
+        for (int i = 0; i < 3; i++)
+        {
+            AddRow(Now.AddDays(-50).AddMinutes(i), tenant1);
+            AddRow(Now.AddDays(-40).AddMinutes(i), tenant2);
+        }
+        AuditLogCleaner cleaner = CreateCleaner(deleteBatchSize: 10);
+
+        // Act
+        await cleaner.CleanAsync(MaxAge, 2, TestContext.Current.CancellationToken);
+
+        // Assert
+        // The most recent outdated row of each tenant is kept
+        GetRemainingExecutionTimes().ShouldBe([Now.AddDays(-50).AddMinutes(2), Now.AddDays(-40).AddMinutes(2)]);
     }
 
     [Fact]
