@@ -9,7 +9,8 @@
 		<IncludeSymbols>true</IncludeSymbols>
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
-  </PropertyGroup>
+		<GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
+	</PropertyGroup>
 
 	<PropertyGroup>
 		<PackageId>Simphonis.Abp.AuditLogs</PackageId>
@@ -32,6 +33,7 @@
 	</PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.0.15" />
     <PackageReference Include="Volo.Abp.AuditLogging.Domain" Version="$(AbpVersion)" />
     <PackageReference Include="Volo.Abp.BackgroundWorkers" Version="$(AbpVersion)" />
     <PackageReference Include="Volo.Abp.Core" Version="$(AbpVersion)" />
@@ -47,5 +49,10 @@
 
 	<ItemGroup>
 		<None Include="NuGet.md" Pack="true" PackagePath="\" Visible="false" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Remove="Localization/*.json" />
+		<EmbeddedResource Include="Localization/*.json" />
 	</ItemGroup>
 </Project>

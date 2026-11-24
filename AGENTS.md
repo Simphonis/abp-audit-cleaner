@@ -46,4 +46,4 @@ There is no separate lint/format/typecheck tooling. Style rules (naming, file-sc
   - The library must not depend on the tenant management module: it replaces the application's `ITenantStore` with one that requires tenant management tables. Use `ITenantStore` to list tenants.
   - The application must use Autofac (`options.UseAutofac()`): `AbpDbContext` relies on property injection.
   - Repositories only work inside a unit of work: wrap every repository call in `IUnitOfWorkManager.Begin()`.
-- New ABP settings need: a constant in `SimphonisAuditLogSettings`, a default in `SimphonisAuditLogConsts`, a `SettingDefinition` in `SimphonisAuditLogSettingDefinitionProvider`, and localized strings in both `Localization/fr.json` and `Localization/en.json` (default culture is fr-FR).
+- New ABP settings need: a constant in `SimphonisAuditLogSettings`, a default in `SimphonisAuditLogConsts`, a `SettingDefinition` in `SimphonisAuditLogSettingDefinitionProvider`, and localized strings in both `Localization/fr.json` and `Localization/en.json` (default culture is en).
