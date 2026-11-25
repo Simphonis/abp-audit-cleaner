@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Volo.Abp.AuditLogging;
 using Volo.Abp.Data;
@@ -21,6 +22,7 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
     private readonly IUnitOfWorkManager _unitOfWorkManager;
     private readonly IOptions<AbpMultiTenancyOptions> _multiTenancyOptions;
     private readonly IAbpLazyServiceProvider _lazyServiceProvider;
+    private readonly ILogger _logger;
     private readonly int _deleteBatchSize;
 
     public AuditLogCleaner(
@@ -32,7 +34,8 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
         IUnitOfWorkManager unitOfWorkManager,
         IOptions<AbpMultiTenancyOptions> multiTenancyOptions,
         IAbpLazyServiceProvider lazyServiceProvider,
-        IOptions<AuditLogCleanerOptions> options)
+        IOptions<AuditLogCleanerOptions> options,
+        ILogger<AuditLogCleaner> logger)
     {
         int deleteBatchSize = options.Value.DeleteBatchSize;
         if (deleteBatchSize <= 0 || deleteBatchSize > SimphonisAuditLogConsts.MaximumPossibleRowCount)
@@ -49,6 +52,7 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
         _unitOfWorkManager = unitOfWorkManager;
         _multiTenancyOptions = multiTenancyOptions;
         _lazyServiceProvider = lazyServiceProvider;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -73,10 +77,30 @@ public class AuditLogCleaner : ITransientDependency, IAuditLogCleaner
         DateTime minimumCreationTime = _clock.Now - maxAge;
 
         IReadOnlyList<Guid?> tenantIds = await GetTenantIdsAsync(cancellationToken);
+        List<Exception> errors = [];
         foreach (Guid? tenantId in tenantIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await CleanTenantAsync(tenantId, minimumCreationTime, maxRowCount, cancellationToken);
+
+            try
+            {
+                await CleanTenantAsync(tenantId, minimumCreationTime, maxRowCount, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred during the audit log cleanup for tenant '{TenantId}'", tenantId?.ToString() ?? "host");
+                errors.Add(ex);
+                // Continue onto the next tenant
+            }
+        }
+
+        if (errors.Count > 0)
+        {
+            throw new AggregateException(errors);
         }
     }
 
