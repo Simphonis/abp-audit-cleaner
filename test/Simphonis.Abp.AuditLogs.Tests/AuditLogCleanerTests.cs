@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
@@ -14,14 +15,16 @@ using Xunit;
 namespace Simphonis.Abp.AuditLogs;
 
 /// <summary>
-/// Tests of the batching logic of <see cref="AuditLogCleaner"/>, against an in-memory list of audit logs.
-/// Multi-tenancy is disabled: only the host rows are cleaned.
+/// Tests of the batching logic and of the per-tenant error handling of <see cref="AuditLogCleaner"/>, against an in-memory list of audit logs.
+/// Unless the test passes tenants to <see cref="CreateCleaner"/>, multi-tenancy is disabled: only the host rows are cleaned.
 /// </summary>
 public sealed class AuditLogCleanerTests : AuditLogsApplicationTestBase
 {
     private static readonly DateTime Now = new(2026, 11, 17, 12, 0, 0, DateTimeKind.Utc);
     private static readonly TimeSpan MaxAge = TimeSpan.FromDays(30);
     private static readonly DateTime RetentionLimit = Now - MaxAge;
+    private static readonly Guid Tenant1 = new("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid Tenant2 = new("22222222-2222-2222-2222-222222222222");
 
     /// <summary>
     /// Content of the fake audit log table
@@ -38,10 +41,33 @@ public sealed class AuditLogCleanerTests : AuditLogsApplicationTestBase
     /// </summary>
     private readonly List<IUnitOfWork> _deleteUnitsOfWork = [];
 
-    private AuditLogCleaner CreateCleaner(int deleteBatchSize)
+    private readonly ILogger<AuditLogCleaner> _logger = Substitute.For<ILogger<AuditLogCleaner>>();
+
+    /// <summary>
+    /// Tenant selected by the cleaner through <see cref="ICurrentTenant.Change"/>, <see langword="null"/> for the host
+    /// </summary>
+    private Guid? _currentTenantId;
+
+    /// <summary>
+    /// Returns the exception the repository must fail with while the given tenant is cleaned, or <see langword="null"/> to succeed
+    /// </summary>
+    private Func<Guid?, Exception?> _tenantFailure = _ => null;
+
+    /// <param name="deleteBatchSize">Value of <see cref="AuditLogCleanerOptions.DeleteBatchSize"/></param>
+    /// <param name="tenantIds">When set, multi-tenancy is enabled and the tenant store lists these tenants</param>
+    private AuditLogCleaner CreateCleaner(int deleteBatchSize, IReadOnlyList<Guid>? tenantIds = null)
     {
         IAuditLogRepository repository = Substitute.For<IAuditLogRepository>();
-        repository.GetQueryableAsync().Returns(_ => Task.FromResult(_rows.AsQueryable()));
+        repository.GetQueryableAsync().Returns(_ =>
+        {
+            Exception? failure = _tenantFailure(_currentTenantId);
+            if (failure != null)
+            {
+                return Task.FromException<IQueryable<AuditLog>>(failure);
+            }
+
+            return Task.FromResult(_rows.AsQueryable());
+        });
         repository.When(r => r.DeleteDirectAsync(Arg.Any<Expression<Func<AuditLog, bool>>>(), Arg.Any<CancellationToken>()))
                   .Do(call =>
                   {
@@ -66,17 +92,44 @@ public sealed class AuditLogCleanerTests : AuditLogsApplicationTestBase
         IClock clock = Substitute.For<IClock>();
         clock.Now.Returns(Now);
 
+        ICurrentTenant currentTenant = Substitute.For<ICurrentTenant>();
+        currentTenant.Change(Arg.Any<Guid?>(), Arg.Any<string?>())
+                     .Returns(call =>
+                     {
+                         _currentTenantId = call.ArgAt<Guid?>(0);
+                         return Substitute.For<IDisposable>();
+                     });
+
+        IAbpLazyServiceProvider lazyServiceProvider = Substitute.For<IAbpLazyServiceProvider>();
+        if (tenantIds != null)
+        {
+            IReadOnlyList<TenantConfiguration> tenants = [.. tenantIds.Select(id => new TenantConfiguration(id, id.ToString()))];
+            ITenantStore tenantStore = Substitute.For<ITenantStore>();
+            tenantStore.GetListAsync(Arg.Any<bool>()).Returns(tenants);
+            lazyServiceProvider.LazyGetRequiredService<ITenantStore>().Returns(tenantStore);
+        }
+
         return new AuditLogCleaner(
             repository,
             clock,
             asyncExecuter,
             Substitute.For<IDataFilter>(),
-            Substitute.For<ICurrentTenant>(),
+            currentTenant,
             unitOfWorkManager,
-            Options.Create(new AbpMultiTenancyOptions { IsEnabled = false }),
-            Substitute.For<IAbpLazyServiceProvider>(),
-            Options.Create(new AuditLogCleanerOptions { DeleteBatchSize = deleteBatchSize }));
+            Options.Create(new AbpMultiTenancyOptions { IsEnabled = tenantIds != null }),
+            lazyServiceProvider,
+            Options.Create(new AuditLogCleanerOptions { DeleteBatchSize = deleteBatchSize }),
+            _logger);
     }
+
+    /// <summary>
+    /// Returns the exceptions passed to the logger at the <see cref="LogLevel.Error"/> level, in order
+    /// </summary>
+    private List<Exception?> GetLoggedErrors() => [.. _logger.ReceivedCalls()
+        .Where(c => c.GetMethodInfo().Name == nameof(ILogger.Log) && c.GetArguments()[0] is LogLevel.Error)
+        .Select(c => c.GetArguments()[3] as Exception)];
+
+    private int CountRows(Guid? tenantId) => _rows.Count(r => r.TenantId == tenantId);
 
     private void AddRow(DateTime executionTime, Guid? tenantId = null) => _rows.Add(new AuditLog(
         Guid.NewGuid(),
@@ -106,15 +159,15 @@ public sealed class AuditLogCleanerTests : AuditLogsApplicationTestBase
         "Test entry"));
 
     /// <summary>
-    /// Adds <paramref name="count"/> outdated host rows, one minute apart, and returns their execution times, oldest first
+    /// Adds <paramref name="count"/> outdated rows of a tenant (the host by default), one minute apart, and returns their execution times, oldest first
     /// </summary>
-    private List<DateTime> AddOutdatedRows(int count)
+    private List<DateTime> AddOutdatedRows(int count, Guid? tenantId = null)
     {
         List<DateTime> result = [];
         for (int i = 0; i < count; i++)
         {
             DateTime executionTime = Now.AddDays(-40).AddMinutes(i);
-            AddRow(executionTime);
+            AddRow(executionTime, tenantId);
             result.Add(executionTime);
         }
         return result;
@@ -277,5 +330,99 @@ public sealed class AuditLogCleanerTests : AuditLogsApplicationTestBase
     public void Should_Use_Default_Delete_Batch_Size_When_Not_Configured()
     {
         new AuditLogCleanerOptions().DeleteBatchSize.ShouldBe(SimphonisAuditLogConsts.DefaultDeleteBatchSize);
+    }
+
+    [Fact]
+    public async Task Should_Clean_Other_Tenants_When_A_Tenant_Fails()
+    {
+        // Arrange
+        AddOutdatedRows(5);
+        AddOutdatedRows(5, Tenant1);
+        AddOutdatedRows(5, Tenant2);
+        InvalidOperationException failure = new("Tenant database unavailable");
+        _tenantFailure = tenantId => tenantId == Tenant1 ? failure : null;
+        AuditLogCleaner cleaner = CreateCleaner(deleteBatchSize: 10, [Tenant1, Tenant2]);
+
+        // Act
+        AggregateException exception = await Should.ThrowAsync<AggregateException>(() => cleaner.CleanAsync(MaxAge, 10_000, TestContext.Current.CancellationToken));
+
+        // Assert
+        exception.InnerExceptions.ShouldBe([failure]);
+        GetLoggedErrors().ShouldBe([failure]);
+        // The host, cleaned before the failing tenant, and the tenant cleaned after it
+        CountRows(null).ShouldBe(0);
+        CountRows(Tenant2).ShouldBe(0);
+        CountRows(Tenant1).ShouldBe(5);
+    }
+
+    [Fact]
+    public async Task Should_Report_Every_Tenant_Failure()
+    {
+        // Arrange
+        AddOutdatedRows(5);
+        AddOutdatedRows(5, Tenant1);
+        AddOutdatedRows(5, Tenant2);
+        InvalidOperationException hostFailure = new("Host database unavailable");
+        InvalidOperationException tenant2Failure = new("Tenant database unavailable");
+        _tenantFailure = tenantId => tenantId == null ? hostFailure : tenantId == Tenant2 ? tenant2Failure : null;
+        AuditLogCleaner cleaner = CreateCleaner(deleteBatchSize: 10, [Tenant1, Tenant2]);
+
+        // Act
+        AggregateException exception = await Should.ThrowAsync<AggregateException>(() => cleaner.CleanAsync(MaxAge, 10_000, TestContext.Current.CancellationToken));
+
+        // Assert
+        exception.InnerExceptions.ShouldBe([hostFailure, tenant2Failure]);
+        GetLoggedErrors().ShouldBe([hostFailure, tenant2Failure]);
+        CountRows(Tenant1).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Should_Stop_When_Cancelled_During_A_Tenant_Cleanup()
+    {
+        // Arrange
+        AddOutdatedRows(5);
+        AddOutdatedRows(5, Tenant1);
+        AddOutdatedRows(5, Tenant2);
+        using CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        _tenantFailure = tenantId =>
+        {
+            if (tenantId != Tenant1)
+            {
+                return null;
+            }
+
+            // The caller cancels the cleanup while the tenant is being cleaned
+            cancellation.Cancel();
+            return new OperationCanceledException(cancellation.Token);
+        };
+        AuditLogCleaner cleaner = CreateCleaner(deleteBatchSize: 10, [Tenant1, Tenant2]);
+
+        // Act & Assert
+        // The cancellation is propagated as is, not reported as a tenant failure
+        await Should.ThrowAsync<OperationCanceledException>(() => cleaner.CleanAsync(MaxAge, 10_000, cancellation.Token));
+        GetLoggedErrors().ShouldBeEmpty();
+        CountRows(null).ShouldBe(0);
+        // The tenants after the cancelled one are not cleaned
+        CountRows(Tenant2).ShouldBe(5);
+    }
+
+    [Fact]
+    public async Task Should_Treat_A_Cancellation_Not_Requested_By_The_Caller_As_A_Tenant_Failure()
+    {
+        // Arrange
+        AddOutdatedRows(5, Tenant1);
+        AddOutdatedRows(5, Tenant2);
+        // For instance a timeout inside the database provider, while the caller's token is not cancelled
+        TaskCanceledException failure = new("Command timeout");
+        _tenantFailure = tenantId => tenantId == Tenant1 ? failure : null;
+        AuditLogCleaner cleaner = CreateCleaner(deleteBatchSize: 10, [Tenant1, Tenant2]);
+
+        // Act
+        AggregateException exception = await Should.ThrowAsync<AggregateException>(() => cleaner.CleanAsync(MaxAge, 10_000, TestContext.Current.CancellationToken));
+
+        // Assert
+        exception.InnerExceptions.ShouldBe([failure]);
+        GetLoggedErrors().ShouldBe([failure]);
+        CountRows(Tenant2).ShouldBe(0);
     }
 }

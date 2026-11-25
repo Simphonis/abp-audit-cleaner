@@ -20,5 +20,6 @@ public interface IAuditLogCleaner
     /// </param>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
+    /// <exception cref="AggregateException">An unexpected error occurred while cleaning one or more of the tenants</exception>
     Task CleanAsync(TimeSpan maxAge, int maxRowCount = 10000, CancellationToken cancellationToken = default);
 }
